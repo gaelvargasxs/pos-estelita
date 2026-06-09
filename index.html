@@ -136,43 +136,48 @@ function cargarDatosLocales() {
 
 /* ── Guardar venta: localStorage primero, Firebase después ── */
 async function saveVenta(ventaObj) {
-  // 1. Guardar local SIEMPRE (instantáneo, funciona sin internet)
-  _ventas.push(ventaObj);
-  localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
-  refreshDashboard();
-  renderChart();
-
-  // 2. Intentar subir a Firebase si hay internet
   if (firebaseOk && navigator.onLine) {
+    // Firebase conectado: subir directo — onSnapshot actualiza _ventas y UI automáticamente
+    // NO guardamos en localStorage aquí para evitar duplicados
     try {
       await addDoc(collection(db, COL_VENTAS), ventaObj);
-      // Marcar como sincronizado
-      ventaObj._sync = true;
-      localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
+      // onSnapshot se dispara solo y refresca todo
     } catch (e) {
-      // No hay problema, quedó en localStorage y se sincronizará después
-      console.warn('[Offline] Venta guardada localmente, se subirá al reconectar.');
+      // Falló Firebase → caer a localStorage como respaldo
+      console.warn('[Offline] Firebase falló, guardando local.');
+      _ventas.push({ ...ventaObj, _sync: false });
+      localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
+      refreshDashboard();
+      renderChart();
     }
+  } else {
+    // Sin internet: guardar solo en localStorage
+    _ventas.push({ ...ventaObj, _sync: false });
+    localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
+    refreshDashboard();
+    renderChart();
   }
 }
 
 /* ── Guardar gasto: localStorage primero, Firebase después ── */
 async function saveGasto(gastoObj) {
-  // 1. Guardar local SIEMPRE
-  _gastos.push(gastoObj);
-  localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
-  refreshDashboard();
-  renderChart();
-
-  // 2. Intentar subir a Firebase si hay internet
   if (firebaseOk && navigator.onLine) {
+    // Firebase conectado: subir directo — onSnapshot actualiza _gastos y UI automáticamente
     try {
       await addDoc(collection(db, COL_GASTOS), gastoObj);
-      gastoObj._sync = true;
-      localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
     } catch (e) {
-      console.warn('[Offline] Gasto guardado localmente, se subirá al reconectar.');
+      console.warn('[Offline] Firebase falló, guardando local.');
+      _gastos.push({ ...gastoObj, _sync: false });
+      localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
+      refreshDashboard();
+      renderChart();
     }
+  } else {
+    // Sin internet: guardar solo en localStorage
+    _gastos.push({ ...gastoObj, _sync: false });
+    localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
+    refreshDashboard();
+    renderChart();
   }
 }
 
@@ -449,19 +454,18 @@ async function cobrar() {
     timestamp: Date.now()
   };
 
-  // ✅ Limpiamos el ticket INMEDIATAMENTE sin esperar a Firebase
-  clearTicket();
-
-  if (navigator.onLine) {
-    showToast(`✅ Venta de $${total} registrada`, 'success');
-  } else {
-    showToast(`✅ $${total} guardado sin internet — se sincronizará solo 📶`, 'info');
+  try {
+    await saveVenta(ventaObj);
+    // ✅ Limpiamos el ticket DESPUÉS de que se guardó correctamente
+    clearTicket();
+    if (navigator.onLine) {
+      showToast(`✅ Venta de $${total} registrada`, 'success');
+    } else {
+      showToast(`✅ $${total} guardado sin internet — se sincronizará solo 📶`, 'info');
+    }
+  } catch (e) {
+    showToast('⚠️ Error al guardar, intenta de nuevo', 'error');
   }
-
-  // Guardamos en segundo plano sin bloquear la UI
-  saveVenta(ventaObj).catch(() => {
-    // Si falla igual queda en caché offline de Firestore
-  });
 }
 window.cobrar = cobrar;
 
@@ -1454,3 +1458,4 @@ initConexionIndicator(); // 5. Badge de estado online/offline
 
 </body>
 </html>
+
