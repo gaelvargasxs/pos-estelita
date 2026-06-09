@@ -139,80 +139,22 @@ const COL_GASTOS = 'gastos';
 let _ventas = [];
 let _gastos = [];
 
-/* ── Cargar datos iniciales desde localStorage ────── */
-function cargarDatosLocales() {
-  _ventas = JSON.parse(localStorage.getItem('estelita_ventas') || '[]');
-  _gastos = JSON.parse(localStorage.getItem('estelita_gastos') || '[]');
-}
-
-/* ── Guardar venta: localStorage primero, Firebase después ── */
+/* ── Guardar venta: SOLO Firebase ── */
 async function saveVenta(ventaObj) {
-  if (firebaseOk && navigator.onLine) {
-    // Firebase conectado: subir directo — onSnapshot actualiza _ventas y UI automáticamente
-    // NO guardamos en localStorage aquí para evitar duplicados
-    try {
-      await addDoc(collection(db, COL_VENTAS), ventaObj);
-      // onSnapshot se dispara solo y refresca todo
-    } catch (e) {
-      // Falló Firebase → caer a localStorage como respaldo
-      console.warn('[Offline] Firebase falló, guardando local.');
-      _ventas.push({ ...ventaObj, _sync: false });
-      localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
-      refreshDashboard();
-      renderChart();
-    }
-  } else {
-    // Sin internet: guardar solo en localStorage
-    _ventas.push({ ...ventaObj, _sync: false });
-    localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
-    refreshDashboard();
-    renderChart();
-  }
+  await addDoc(collection(db, COL_VENTAS), ventaObj);
+  // onSnapshot se dispara automáticamente y actualiza _ventas + UI
 }
 
-/* ── Guardar gasto: localStorage primero, Firebase después ── */
+/* ── Guardar gasto: SOLO Firebase ── */
 async function saveGasto(gastoObj) {
-  if (firebaseOk && navigator.onLine) {
-    // Firebase conectado: subir directo — onSnapshot actualiza _gastos y UI automáticamente
-    try {
-      await addDoc(collection(db, COL_GASTOS), gastoObj);
-    } catch (e) {
-      console.warn('[Offline] Firebase falló, guardando local.');
-      _gastos.push({ ...gastoObj, _sync: false });
-      localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
-      refreshDashboard();
-      renderChart();
-    }
-  } else {
-    // Sin internet: guardar solo en localStorage
-    _gastos.push({ ...gastoObj, _sync: false });
-    localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
-    refreshDashboard();
-    renderChart();
-  }
+  await addDoc(collection(db, COL_GASTOS), gastoObj);
+  // onSnapshot se dispara automáticamente y actualiza _gastos + UI
 }
 
-/* ── Eliminar movimiento ────────────────────────── */
+/* ── Eliminar movimiento: SOLO Firebase ── */
 async function deleteMovFirestore(coleccion, docId) {
-  // Eliminar de memoria y localStorage
-  if (coleccion === COL_VENTAS) {
-    _ventas = _ventas.filter(v => v.id !== docId && v._docId !== docId);
-    localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
-  } else {
-    _gastos = _gastos.filter(g => g.id !== docId && g._docId !== docId);
-    localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
-  }
-  refreshDashboard();
-  renderChart();
-
-  // Eliminar de Firebase si hay internet
-  if (firebaseOk && navigator.onLine) {
-    try {
-      await deleteDoc(doc(db, coleccion, docId));
-    } catch (e) {
-      console.warn('[Offline] No se pudo eliminar de Firebase aún.');
-    }
-  }
+  await deleteDoc(doc(db, coleccion, docId));
+  // onSnapshot actualiza la UI automáticamente
 }
 
 /* ── Limpiar todo ───────────────────────────────── */
@@ -241,38 +183,7 @@ async function deleteAllDocs(coleccion) {
 function getVentas() { return _ventas; }
 function getGastos() { return _gastos; }
 
-/* ── Sincronizar pendientes cuando vuelve internet ─
-   Al reconectarse sube todo lo que quedó sin sincronizar */
-async function sincronizarPendientes() {
-  if (!firebaseOk || !navigator.onLine) return;
-
-  const ventasPendientes = _ventas.filter(v => !v._sync && !v._docId);
-  const gastosPendientes = _gastos.filter(g => !g._sync && !g._docId);
-
-  if (ventasPendientes.length === 0 && gastosPendientes.length === 0) return;
-
-  let subidos = 0;
-  for (const v of ventasPendientes) {
-    try {
-      await addDoc(collection(db, COL_VENTAS), v);
-      v._sync = true;
-      subidos++;
-    } catch (e) { /* reintentará después */ }
-  }
-  for (const g of gastosPendientes) {
-    try {
-      await addDoc(collection(db, COL_GASTOS), g);
-      g._sync = true;
-      subidos++;
-    } catch (e) { /* reintentará después */ }
-  }
-
-  if (subidos > 0) {
-    localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
-    localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
-    showToast(`☁️ ${subidos} registro(s) sincronizados con la nube`, 'success');
-  }
-}
+/* sincronizarPendientes eliminado — Firebase maneja todo */
 
 /* ── Listener en tiempo real de Firestore ──────────
    Firestore es la ÚNICA fuente de verdad.
@@ -857,15 +768,9 @@ window.showToast = showToast;
    INICIALIZAR APP
    Todo arranca aquí al cargar la página.
 ===================================================== */
-// Si hay Firebase online: Firestore es la fuente de verdad, no usamos localStorage
-// Si no hay internet: cargamos localStorage como respaldo offline
-if (!firebaseOk || !navigator.onLine) {
-  cargarDatosLocales();
-}
-
 renderCatalog();         // Renderiza catálogo de productos
-refreshDashboard();      // Dashboard inicial (onSnapshot lo actualizará)
-suscribirFirestore();    // Conecta Firestore — reemplaza datos al llegar
+refreshDashboard();      // Dashboard vacío inicial
+suscribirFirestore();    // Firestore llena todo vía onSnapshot
 initConexionIndicator(); // Badge online/offline
 
 </script>
@@ -1464,3 +1369,4 @@ initConexionIndicator(); // Badge online/offline
 
 </body>
 </html>
+
