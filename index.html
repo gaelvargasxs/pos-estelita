@@ -11,12 +11,27 @@
      FIREBASE SDK — importado via CDN como módulo ES
      No requiere npm ni bundlers. Funciona en un solo .html
 ===================================================== -->
-<script type="module">
-import { initializeApp }                          from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, collection, addDoc,
-         getDocs, deleteDoc, doc, onSnapshot,
-         enableIndexedDbPersistence, query,
-         orderBy, writeBatch }                    from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+<!-- Firebase compat SDK - funciona como script normal, sin módulos ES -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+// Adaptadores para que el código existente funcione con compat SDK
+const initializeApp = (config) => firebase.initializeApp(config);
+const getFirestore  = (app) => app.firestore();
+const collection    = (db, name) => db.collection(name);
+const addDoc        = (ref, data) => ref.add(data);
+const getDocs       = (ref) => ref.get();
+const deleteDoc     = (ref) => ref.delete();
+const doc           = (db, col, id) => db.collection(col).doc(id);
+const writeBatch    = (db) => db.batch();
+const orderBy       = (field, dir) => firebase.firestore.Query ? field : field;
+const query         = (ref, ...args) => ref.orderBy('timestamp', 'asc');
+const enableIndexedDbPersistence = (db) => db.enablePersistence().catch(()=>{});
+function onSnapshot(ref, cb, errCb) { return ref.onSnapshot(snap => {
+  // Convert compat snapshot to match modular API shape
+  snap.docs = snap.docs || [];
+  cb(snap);
+}, errCb); }
 
 /* =====================================================
    ██████╗  ██████╗ ███╗   ██╗███████╗██╗ ██████╗
@@ -856,10 +871,19 @@ window.showToast = showToast;
    INICIALIZAR APP
    Todo arranca aquí al cargar la página.
 ===================================================== */
-cargarDatosLocales();    // 1. Carga datos locales PRIMERO (funciona sin internet)
+cargarDatosLocales();    // 1. Carga datos locales (solo si no hay internet)
 renderCatalog();         // 2. Renderiza el catálogo de productos
-refreshDashboard();      // 3. Muestra los datos locales en el dashboard
-suscribirFirestore();    // 4. Conecta con Firebase si hay internet
+
+// ⚠️ FIX DUPLICADOS: si Firebase está disponible, Firestore es la
+// única fuente de verdad. Vaciamos lo que cargó localStorage para
+// que onSnapshot no mezcle datos y duplique registros.
+if (firebaseOk && navigator.onLine) {
+  _ventas = [];
+  _gastos = [];
+}
+
+refreshDashboard();      // 3. Muestra dashboard (onSnapshot lo llenará en ms)
+suscribirFirestore();    // 4. Conecta Firebase — onSnapshot es la fuente real
 initConexionIndicator(); // 5. Badge de estado online/offline
 
 </script>
@@ -1458,4 +1482,3 @@ initConexionIndicator(); // 5. Badge de estado online/offline
 
 </body>
 </html>
-
