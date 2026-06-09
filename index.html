@@ -11,23 +11,12 @@
      FIREBASE SDK — importado via CDN como módulo ES
      No requiere npm ni bundlers. Funciona en un solo .html
 ===================================================== -->
-<!-- Firebase compat SDK - funciona como script normal, sin módulos ES -->
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script>
-// Adaptadores para que el código existente funcione con compat SDK
-const initializeApp = (config) => firebase.initializeApp(config);
-const getFirestore  = (app) => app.firestore();
-const collection    = (db, name) => db.collection(name);
-const addDoc        = (ref, data) => ref.add(data);
-const getDocs       = (ref) => ref.get();
-const deleteDoc     = (ref) => ref.delete();
-const doc           = (db, col, id) => db.collection(col).doc(id);
-const writeBatch    = (db) => db.batch();
-const orderBy       = (field, dir) => firebase.firestore.Query ? field : field;
-const query         = (ref, ...args) => ref.orderBy('timestamp', 'asc');
-const enableIndexedDbPersistence = (db) => db.enablePersistence().catch(()=>{});
-function onSnapshot(ref, cb, errCb) { return ref.onSnapshot(cb, errCb); }
+<script type="module">
+import { initializeApp }                          from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, addDoc,
+         getDocs, deleteDoc, doc, onSnapshot,
+         enableIndexedDbPersistence, query,
+         orderBy, writeBatch }                    from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* =====================================================
    ██████╗  ██████╗ ███╗   ██╗███████╗██╗ ██████╗
@@ -121,88 +110,141 @@ try {
 
 
 /* =====================================================
-   CAPA DE DATOS — ESTRATEGIA OFFLINE FIRST
-   
-   Funcionamiento:
-   1. Todo se guarda en localStorage PRIMERO (instantáneo)
-   2. Si hay internet → también se sube a Firestore
-   3. Si no hay internet → queda en cola (pendientes)
-   4. Al volver internet → sincroniza pendientes automáticamente
-   
-   Así funciona 100% offline sin importar el estado de Firebase.
+   CAPA DE DATOS — ABSTRACCIÓN FIRESTORE / localStorage
+   Todas las funciones del POS llaman a esta capa.
+   Si Firebase está disponible → usa Firestore.
+   Si no → cae a localStorage como respaldo seguro.
 ===================================================== */
 
+/* ── COLECCIONES en Firestore ──────────────────────
+   /ventas/{id}  → documentos de ventas
+   /gastos/{id}  → documentos de gastos             */
 const COL_VENTAS = 'ventas';
 const COL_GASTOS = 'gastos';
 
-/* Estado en memoria — se carga desde localStorage al iniciar */
+/* Estado reactivo en memoria (se carga desde Firestore
+   y se mantiene sincronizado con onSnapshot) */
 let _ventas = [];
 let _gastos = [];
 
-/* ── Guardar venta: SOLO Firebase ── */
+/* ── Guardar venta en Firestore ────────────────── */
 async function saveVenta(ventaObj) {
-  await addDoc(collection(db, COL_VENTAS), ventaObj);
-  // onSnapshot se dispara automáticamente y actualiza _ventas + UI
-}
-
-/* ── Guardar gasto: SOLO Firebase ── */
-async function saveGasto(gastoObj) {
-  await addDoc(collection(db, COL_GASTOS), gastoObj);
-  // onSnapshot se dispara automáticamente y actualiza _gastos + UI
-}
-
-/* ── Eliminar movimiento: SOLO Firebase ── */
-async function deleteMovFirestore(coleccion, docId) {
-  await deleteDoc(doc(db, coleccion, docId));
-  // onSnapshot actualiza la UI automáticamente
-}
-
-/* ── Limpiar todo ───────────────────────────────── */
-async function deleteAllDocs(coleccion) {
-  if (coleccion === COL_VENTAS) {
-    _ventas = [];
-    localStorage.removeItem('estelita_ventas');
-  } else {
-    _gastos = [];
-    localStorage.removeItem('estelita_gastos');
-  }
-
-  if (firebaseOk && navigator.onLine) {
+  if (firebaseOk) {
     try {
-      const snap = await getDocs(collection(db, coleccion));
-      const batch = writeBatch(db);
-      snap.forEach(d => batch.delete(d.ref));
-      await batch.commit();
+      await addDoc(collection(db, COL_VENTAS), ventaObj);
     } catch (e) {
-      console.warn('[Offline] No se pudo limpiar Firebase aún.');
+      console.error('[Firestore] Error guardando venta:', e);
+      // Respaldo local si falla la escritura remota
+      _saveLocalBackup('estelita_ventas_backup', ventaObj);
+      throw e; // Relanza para que el llamador muestre el error
     }
+  } else {
+    // Modo sin Firebase: usa localStorage directamente
+    const arr = JSON.parse(localStorage.getItem('estelita_ventas') || '[]');
+    arr.push(ventaObj);
+    localStorage.setItem('estelita_ventas', JSON.stringify(arr));
+    _ventas = arr;
+    refreshDashboard();
+    renderChart();
   }
 }
 
-/* ── Getters ────────────────────────────────────── */
+/* ── Guardar gasto en Firestore ─────────────────── */
+async function saveGasto(gastoObj) {
+  if (firebaseOk) {
+    try {
+      await addDoc(collection(db, COL_GASTOS), gastoObj);
+    } catch (e) {
+      console.error('[Firestore] Error guardando gasto:', e);
+      _saveLocalBackup('estelita_gastos_backup', gastoObj);
+      throw e;
+    }
+  } else {
+    const arr = JSON.parse(localStorage.getItem('estelita_gastos') || '[]');
+    arr.push(gastoObj);
+    localStorage.setItem('estelita_gastos', JSON.stringify(arr));
+    _gastos = arr;
+    refreshDashboard();
+    renderChart();
+  }
+}
+
+/* ── Eliminar documento de Firestore ────────────── */
+async function deleteMovFirestore(coleccion, docId) {
+  if (firebaseOk) {
+    try {
+      await deleteDoc(doc(db, coleccion, docId));
+    } catch (e) {
+      console.error('[Firestore] Error eliminando documento:', e);
+      showToast('❌ Error al eliminar. Revisa conexión.', 'error');
+    }
+  } else {
+    // Modo sin Firebase: elimina de localStorage por id
+    if (coleccion === COL_VENTAS) {
+      _ventas = _ventas.filter(v => v.id !== docId);
+      localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
+    } else {
+      _gastos = _gastos.filter(g => g.id !== docId);
+      localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
+    }
+    refreshDashboard();
+    renderChart();
+  }
+}
+
+/* ── Limpiar toda la colección (Limpiar Todo) ───── */
+async function deleteAllDocs(coleccion) {
+  if (!firebaseOk) {
+    if (coleccion === COL_VENTAS) {
+      _ventas = [];
+      localStorage.removeItem('estelita_ventas');
+    } else {
+      _gastos = [];
+      localStorage.removeItem('estelita_gastos');
+    }
+    return;
+  }
+  // Firestore no tiene "deleteCollection" directo:
+  // obtenemos todos los docs y los borramos en batch.
+  const snap = await getDocs(collection(db, coleccion));
+  const batch = writeBatch(db);
+  snap.forEach(d => batch.delete(d.ref));
+  await batch.commit();
+}
+
+/* ── Respaldo local de emergencia ───────────────── */
+function _saveLocalBackup(key, obj) {
+  const arr = JSON.parse(localStorage.getItem(key) || '[]');
+  arr.push(obj);
+  localStorage.setItem(key, JSON.stringify(arr));
+}
+
+/* ── Getters en memoria (para gráficas, exports) ── */
 function getVentas() { return _ventas; }
 function getGastos() { return _gastos; }
 
-/* sincronizarPendientes eliminado — Firebase maneja todo */
 
-/* ── Listener en tiempo real de Firestore ──────────
-   Firestore es la ÚNICA fuente de verdad.
-   onSnapshot reemplaza _ventas/_gastos completo cada vez.
-   Sin mezclas, sin duplicados posibles.               */
+/* =====================================================
+   LISTENERS EN TIEMPO REAL (onSnapshot)
+   Firestore notifica al instante cada vez que un
+   documento es agregado, modificado o eliminado,
+   desde cualquier dispositivo. La UI se actualiza sola.
+===================================================== */
 function suscribirFirestore() {
   if (!firebaseOk) return;
 
+  /* Escuchar colección /ventas, ordenada por timestamp */
   onSnapshot(
     query(collection(db, COL_VENTAS), orderBy('timestamp', 'asc')),
     snap => {
-      // Reemplazar COMPLETO — Firestore manda la lista definitiva
       _ventas = snap.docs.map(d => ({ ...d.data(), _docId: d.id }));
       refreshDashboard();
       renderChart();
     },
-    err => console.warn('[Firestore] Sin conexión, usando datos locales.')
+    err => console.error('[Firestore] Error en listener ventas:', err)
   );
 
+  /* Escuchar colección /gastos */
   onSnapshot(
     query(collection(db, COL_GASTOS), orderBy('timestamp', 'asc')),
     snap => {
@@ -210,9 +252,10 @@ function suscribirFirestore() {
       refreshDashboard();
       renderChart();
     },
-    err => console.warn('[Firestore] Sin conexión, usando datos locales.')
+    err => console.error('[Firestore] Error en listener gastos:', err)
   );
 }
+
 
 /* =====================================================
    INDICADOR DE ESTADO DE CONEXIÓN
@@ -354,29 +397,34 @@ async function cobrar() {
     return;
   }
 
+  // Deshabilita el botón mientras guarda (evita doble cobro)
+  const btnCobrar = document.querySelector('.btn-cobrar');
+  btnCobrar.disabled = true;
+  btnCobrar.textContent = '⏳ Guardando...';
+
   const total = keys.reduce((acc, n) => acc + ticket[n].price * ticket[n].qty, 0);
   const items = keys.map(n => `${ticket[n].qty}x ${n}`).join(', ');
 
   const ventaObj = {
-    id:        Date.now() + '_v',
+    id:        Date.now() + '_v',  // ID local de respaldo
     type:      'venta',
     desc:      'Venta: ' + items,
     amount:    total,
     date:      new Date().toLocaleString('es-MX'),
-    timestamp: Date.now()
+    timestamp: Date.now()          // Campo para ordenar en Firestore
   };
 
   try {
     await saveVenta(ventaObj);
-    // ✅ Limpiamos el ticket DESPUÉS de que se guardó correctamente
+    showToast(`✅ Venta de $${total} registrada`, 'success');
     clearTicket();
-    if (navigator.onLine) {
-      showToast(`✅ Venta de $${total} registrada`, 'success');
-    } else {
-      showToast(`✅ $${total} guardado sin internet — se sincronizará solo 📶`, 'info');
-    }
+    // Dashboard y gráfica se actualizan solos via onSnapshot
   } catch (e) {
-    showToast('⚠️ Error al guardar, intenta de nuevo', 'error');
+    showToast('⚠️ Guardado local (sin internet). Se sincronizará pronto.', 'info');
+    clearTicket();
+  } finally {
+    btnCobrar.disabled = false;
+    btnCobrar.innerHTML = `💳 Cobrar <span id="btn-cobrar-total">$0</span>`;
   }
 }
 window.cobrar = cobrar;
@@ -768,10 +816,10 @@ window.showToast = showToast;
    INICIALIZAR APP
    Todo arranca aquí al cargar la página.
 ===================================================== */
-renderCatalog();         // Renderiza catálogo de productos
-refreshDashboard();      // Dashboard vacío inicial
-suscribirFirestore();    // Firestore llena todo vía onSnapshot
-initConexionIndicator(); // Badge online/offline
+renderCatalog();
+refreshDashboard();
+suscribirFirestore();    // Activa listeners en tiempo real
+initConexionIndicator(); // Badge de estado online/offline
 
 </script>
 <style>
@@ -1369,4 +1417,5 @@ initConexionIndicator(); // Badge online/offline
 
 </body>
 </html>
+
 
