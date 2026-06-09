@@ -1,0 +1,1456 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Nevería Estelita — POS & Contabilidad</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<!-- =====================================================
+     FIREBASE SDK — importado via CDN como módulo ES
+     No requiere npm ni bundlers. Funciona en un solo .html
+===================================================== -->
+<script type="module">
+import { initializeApp }                          from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, addDoc,
+         getDocs, deleteDoc, doc, onSnapshot,
+         enableIndexedDbPersistence, query,
+         orderBy, writeBatch }                    from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+/* =====================================================
+   ██████╗  ██████╗ ███╗   ██╗███████╗██╗ ██████╗
+   ██╔════╝██╔═══██╗████╗  ██║██╔════╝██║██╔════╝
+   ██║     ██║   ██║██╔██╗ ██║█████╗  ██║██║  ███╗
+   ██║     ██║   ██║██║╚██╗██║██╔══╝  ██║██║   ██║
+   ╚██████╗╚██████╔╝██║ ╚████║██║     ██║╚██████╔╝
+    ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝     ╚═╝ ╚═════╝
+
+   ┌─────────────────────────────────────────────────┐
+   │  SECCIÓN DE CONFIGURACIÓN DEL NEGOCIO           │
+   │  Edita estos valores para cada cliente nuevo.   │
+   │  Solo necesitas cambiar lo que está AQUÍ ABAJO. │
+   └─────────────────────────────────────────────────┘
+===================================================== */
+
+/* ── 1. NOMBRE DEL NEGOCIO ─────────────────────────
+   Se muestra en el header, exportaciones y resumen.  */
+const NOMBRE_NEGOCIO = "Nevería Estelita";
+
+/* ── 2. CREDENCIALES FIREBASE ──────────────────────
+   Pega aquí el objeto firebaseConfig que te da
+   Firebase Console → Configuración del proyecto.
+   Cada cliente tendrá sus propias credenciales.      */
+const firebaseConfig = {
+  apiKey:            "PEGA_TU_API_KEY_AQUI",
+  authDomain:        "tu-proyecto.firebaseapp.com",
+  projectId:         "tu-proyecto-id",
+  storageBucket:     "tu-proyecto.appspot.com",
+  messagingSenderId: "123456789",
+  appId:             "1:123456789:web:abc123"
+};
+
+/* ── 3. CONTRASEÑA DE ADMINISTRADOR ────────────────
+   Solo números, 4 dígitos. Ej: '1234', '9876'       */
+const ADMIN_PASSWORD = '1234';
+
+/* ── 4. CATÁLOGO DE PRODUCTOS ──────────────────────
+   Modifica nombres, precios y emojis según el menú.
+   Formato: { name, price, emoji }                   */
+const PRODUCTS = [
+  { name: "Helado Sencillo",  price: 40,  emoji: "🍦" },
+  { name: "Helado Doble",     price: 60,  emoji: "🍨" },
+  { name: "Helado Triple",    price: 80,  emoji: "🍧" },
+  { name: "Raspado",          price: 60,  emoji: "🧊" },
+  { name: "Mangonada",        price: 50,  emoji: "🥭" },
+  { name: "Chamoyada",        price: 55,  emoji: "🌶️" },
+  { name: "Nachos",           price: 45,  emoji: "🧀" },
+  { name: "Fruta con Crema",  price: 65,  emoji: "🍓" },
+  { name: "Tostada de Nieve", price: 35,  emoji: "🍞" },
+  { name: "Agua Fresca",      price: 25,  emoji: "🥤" },
+  { name: "Paleta",           price: 20,  emoji: "🍡" },
+  { name: "Sundae",           price: 70,  emoji: "🍮" },
+];
+/* ── FIN DE LA SECCIÓN DE CONFIGURACIÓN ─────────── */
+
+
+/* =====================================================
+   INICIALIZACIÓN DE FIREBASE
+   Se inicializa la app y la base de datos Firestore.
+===================================================== */
+let app, db;
+let firebaseOk = false; // Bandera: ¿Firebase conectado correctamente?
+
+try {
+  app = initializeApp(firebaseConfig);
+  db  = getFirestore(app);
+
+  /* Habilitar modo offline: Firestore guarda los datos
+     en IndexedDB del navegador y sincroniza cuando
+     vuelve la conexión a internet. */
+  enableIndexedDbPersistence(db).catch(err => {
+    if (err.code === 'failed-precondition') {
+      // Varias pestañas abiertas al mismo tiempo — solo
+      // una puede tener persistencia activa a la vez.
+      console.warn('[Firebase] Persistencia offline desactivada: varias pestañas abiertas.');
+    } else if (err.code === 'unimplemented') {
+      // El navegador no soporta IndexedDB (muy raro hoy).
+      console.warn('[Firebase] Este navegador no soporta modo offline.');
+    }
+  });
+
+  firebaseOk = true;
+  console.info('[Firebase] ✅ Conexión establecida correctamente.');
+} catch (e) {
+  // Si las credenciales son inválidas o hay error de red,
+  // el sistema cae al modo localStorage como respaldo.
+  console.error('[Firebase] ❌ Error al inicializar:', e.message);
+  mostrarBannerError('Firebase no conectado: revisa las credenciales en la sección CONFIG del código.');
+}
+
+
+/* =====================================================
+   CAPA DE DATOS — ESTRATEGIA OFFLINE FIRST
+   
+   Funcionamiento:
+   1. Todo se guarda en localStorage PRIMERO (instantáneo)
+   2. Si hay internet → también se sube a Firestore
+   3. Si no hay internet → queda en cola (pendientes)
+   4. Al volver internet → sincroniza pendientes automáticamente
+   
+   Así funciona 100% offline sin importar el estado de Firebase.
+===================================================== */
+
+const COL_VENTAS = 'ventas';
+const COL_GASTOS = 'gastos';
+
+/* Estado en memoria — se carga desde localStorage al iniciar */
+let _ventas = [];
+let _gastos = [];
+
+/* ── Cargar datos iniciales desde localStorage ────── */
+function cargarDatosLocales() {
+  _ventas = JSON.parse(localStorage.getItem('estelita_ventas') || '[]');
+  _gastos = JSON.parse(localStorage.getItem('estelita_gastos') || '[]');
+}
+
+/* ── Guardar venta: localStorage primero, Firebase después ── */
+async function saveVenta(ventaObj) {
+  // 1. Guardar local SIEMPRE (instantáneo, funciona sin internet)
+  _ventas.push(ventaObj);
+  localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
+  refreshDashboard();
+  renderChart();
+
+  // 2. Intentar subir a Firebase si hay internet
+  if (firebaseOk && navigator.onLine) {
+    try {
+      await addDoc(collection(db, COL_VENTAS), ventaObj);
+      // Marcar como sincronizado
+      ventaObj._sync = true;
+      localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
+    } catch (e) {
+      // No hay problema, quedó en localStorage y se sincronizará después
+      console.warn('[Offline] Venta guardada localmente, se subirá al reconectar.');
+    }
+  }
+}
+
+/* ── Guardar gasto: localStorage primero, Firebase después ── */
+async function saveGasto(gastoObj) {
+  // 1. Guardar local SIEMPRE
+  _gastos.push(gastoObj);
+  localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
+  refreshDashboard();
+  renderChart();
+
+  // 2. Intentar subir a Firebase si hay internet
+  if (firebaseOk && navigator.onLine) {
+    try {
+      await addDoc(collection(db, COL_GASTOS), gastoObj);
+      gastoObj._sync = true;
+      localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
+    } catch (e) {
+      console.warn('[Offline] Gasto guardado localmente, se subirá al reconectar.');
+    }
+  }
+}
+
+/* ── Eliminar movimiento ────────────────────────── */
+async function deleteMovFirestore(coleccion, docId) {
+  // Eliminar de memoria y localStorage
+  if (coleccion === COL_VENTAS) {
+    _ventas = _ventas.filter(v => v.id !== docId && v._docId !== docId);
+    localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
+  } else {
+    _gastos = _gastos.filter(g => g.id !== docId && g._docId !== docId);
+    localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
+  }
+  refreshDashboard();
+  renderChart();
+
+  // Eliminar de Firebase si hay internet
+  if (firebaseOk && navigator.onLine) {
+    try {
+      await deleteDoc(doc(db, coleccion, docId));
+    } catch (e) {
+      console.warn('[Offline] No se pudo eliminar de Firebase aún.');
+    }
+  }
+}
+
+/* ── Limpiar todo ───────────────────────────────── */
+async function deleteAllDocs(coleccion) {
+  if (coleccion === COL_VENTAS) {
+    _ventas = [];
+    localStorage.removeItem('estelita_ventas');
+  } else {
+    _gastos = [];
+    localStorage.removeItem('estelita_gastos');
+  }
+
+  if (firebaseOk && navigator.onLine) {
+    try {
+      const snap = await getDocs(collection(db, coleccion));
+      const batch = writeBatch(db);
+      snap.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    } catch (e) {
+      console.warn('[Offline] No se pudo limpiar Firebase aún.');
+    }
+  }
+}
+
+/* ── Getters ────────────────────────────────────── */
+function getVentas() { return _ventas; }
+function getGastos() { return _gastos; }
+
+/* ── Sincronizar pendientes cuando vuelve internet ─
+   Al reconectarse sube todo lo que quedó sin sincronizar */
+async function sincronizarPendientes() {
+  if (!firebaseOk || !navigator.onLine) return;
+
+  const ventasPendientes = _ventas.filter(v => !v._sync && !v._docId);
+  const gastosPendientes = _gastos.filter(g => !g._sync && !g._docId);
+
+  if (ventasPendientes.length === 0 && gastosPendientes.length === 0) return;
+
+  let subidos = 0;
+  for (const v of ventasPendientes) {
+    try {
+      await addDoc(collection(db, COL_VENTAS), v);
+      v._sync = true;
+      subidos++;
+    } catch (e) { /* reintentará después */ }
+  }
+  for (const g of gastosPendientes) {
+    try {
+      await addDoc(collection(db, COL_GASTOS), g);
+      g._sync = true;
+      subidos++;
+    } catch (e) { /* reintentará después */ }
+  }
+
+  if (subidos > 0) {
+    localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
+    localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
+    showToast(`☁️ ${subidos} registro(s) sincronizados con la nube`, 'success');
+  }
+}
+
+/* ── Listener en tiempo real de Firestore ──────────
+   Cuando hay internet, Firestore actualiza los datos
+   en tiempo real desde cualquier dispositivo.        */
+function suscribirFirestore() {
+  if (!firebaseOk) return;
+
+  onSnapshot(
+    query(collection(db, COL_VENTAS), orderBy('timestamp', 'asc')),
+    snap => {
+      // Mezclar datos de Firestore con los locales no sincronizados
+      const deFirestore = snap.docs.map(d => ({ ...d.data(), _docId: d.id, _sync: true }));
+      const soloLocales = _ventas.filter(v => !v._sync && !v._docId);
+      _ventas = [...deFirestore, ...soloLocales];
+      localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
+      refreshDashboard();
+      renderChart();
+    },
+    err => console.warn('[Firestore] Sin conexión, usando datos locales.')
+  );
+
+  onSnapshot(
+    query(collection(db, COL_GASTOS), orderBy('timestamp', 'asc')),
+    snap => {
+      const deFirestore = snap.docs.map(d => ({ ...d.data(), _docId: d.id, _sync: true }));
+      const soloLocales = _gastos.filter(g => !g._sync && !g._docId);
+      _gastos = [...deFirestore, ...soloLocales];
+      localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
+      refreshDashboard();
+      renderChart();
+    },
+    err => console.warn('[Firestore] Sin conexión, usando datos locales.')
+  );
+
+  // Sincronizar pendientes cada vez que vuelve el internet
+  window.addEventListener('online', () => {
+    setTimeout(sincronizarPendientes, 2000);
+  });
+}
+
+/* =====================================================
+   INDICADOR DE ESTADO DE CONEXIÓN
+   Muestra un badge en el header: 🟢 En línea / 🔴 Sin conexión
+===================================================== */
+function initConexionIndicator() {
+  const badge = document.getElementById('conexion-badge');
+  if (!badge) return;
+
+  function actualizar() {
+    if (navigator.onLine) {
+      badge.textContent = '🟢 En línea';
+      badge.style.color = 'var(--green)';
+    } else {
+      badge.textContent = '🔴 Sin conexión (modo offline)';
+      badge.style.color = 'var(--pink)';
+    }
+  }
+
+  actualizar();
+  window.addEventListener('online',  actualizar);
+  window.addEventListener('offline', actualizar);
+}
+
+/* Banner de error para credenciales inválidas */
+function mostrarBannerError(msg) {
+  const banner = document.getElementById('firebase-banner');
+  if (banner) {
+    banner.textContent = '⚠️ ' + msg;
+    banner.style.display = 'block';
+  }
+}
+
+
+/* =====================================================
+   TABS
+===================================================== */
+function showTab(tab) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('sec-' + tab).classList.add('active');
+  event.currentTarget.classList.add('active');
+  if (tab === 'acc') { refreshDashboard(); setTimeout(renderChart, 80); }
+}
+window.showTab = showTab; // Exponemos al HTML (onclick)
+
+
+/* =====================================================
+   CATÁLOGO DE PRODUCTOS
+===================================================== */
+function renderCatalog() {
+  const grid = document.getElementById('catalog-grid');
+  grid.innerHTML = PRODUCTS.map((p, i) => `
+    <button class="product-btn" onclick="addToTicket(${i})">
+      <span class="emoji">${p.emoji}</span>
+      <span class="p-name">${p.name}</span>
+      <span class="p-price">$${p.price}</span>
+    </button>
+  `).join('');
+}
+
+
+/* =====================================================
+   TICKET: Agregar, ajustar cantidad, limpiar
+===================================================== */
+let ticket = {}; // { productName: { name, price, qty } }
+
+function addToTicket(productIndex) {
+  const p = PRODUCTS[productIndex];
+  if (ticket[p.name]) {
+    ticket[p.name].qty++;
+  } else {
+    ticket[p.name] = { name: p.name, price: p.price, qty: 1 };
+  }
+  renderTicket();
+}
+window.addToTicket = addToTicket;
+
+function changeQty(name, delta) {
+  if (!ticket[name]) return;
+  ticket[name].qty += delta;
+  if (ticket[name].qty <= 0) delete ticket[name];
+  renderTicket();
+}
+window.changeQty = changeQty;
+
+function renderTicket() {
+  const container = document.getElementById('ticket-items');
+  const keys = Object.keys(ticket);
+
+  if (keys.length === 0) {
+    container.innerHTML = `
+      <div class="ticket-empty">
+        <div class="emoji-big">🍦</div>
+        <p>Agrega productos<br>para comenzar</p>
+      </div>`;
+    setTotal(0);
+    return;
+  }
+
+  container.innerHTML = keys.map(name => {
+    const item = ticket[name];
+    const sub  = item.price * item.qty;
+    return `
+      <div class="ticket-item">
+        <div class="qty-ctrl">
+          <button onclick="changeQty('${name}', -1)">−</button>
+          <span class="qty">${item.qty}</span>
+          <button onclick="changeQty('${name}', 1)">+</button>
+        </div>
+        <span class="ti-name">${item.name}</span>
+        <span class="ti-sub">$${sub}</span>
+      </div>`;
+  }).join('');
+
+  const total = keys.reduce((acc, n) => acc + ticket[n].price * ticket[n].qty, 0);
+  setTotal(total);
+}
+
+function setTotal(amount) {
+  document.getElementById('ticket-total').textContent    = '$' + amount;
+  document.getElementById('btn-cobrar-total').textContent = '$' + amount;
+}
+
+function clearTicket() {
+  ticket = {};
+  renderTicket();
+}
+window.clearTicket = clearTicket;
+
+
+/* =====================================================
+   COBRAR — Registrar venta en Firestore
+===================================================== */
+async function cobrar() {
+  const keys = Object.keys(ticket);
+  if (keys.length === 0) {
+    showToast('El ticket está vacío 🍦', 'error');
+    return;
+  }
+
+  const total = keys.reduce((acc, n) => acc + ticket[n].price * ticket[n].qty, 0);
+  const items = keys.map(n => `${ticket[n].qty}x ${n}`).join(', ');
+
+  const ventaObj = {
+    id:        Date.now() + '_v',
+    type:      'venta',
+    desc:      'Venta: ' + items,
+    amount:    total,
+    date:      new Date().toLocaleString('es-MX'),
+    timestamp: Date.now()
+  };
+
+  // ✅ Limpiamos el ticket INMEDIATAMENTE sin esperar a Firebase
+  clearTicket();
+
+  if (navigator.onLine) {
+    showToast(`✅ Venta de $${total} registrada`, 'success');
+  } else {
+    showToast(`✅ $${total} guardado sin internet — se sincronizará solo 📶`, 'info');
+  }
+
+  // Guardamos en segundo plano sin bloquear la UI
+  saveVenta(ventaObj).catch(() => {
+    // Si falla igual queda en caché offline de Firestore
+  });
+}
+window.cobrar = cobrar;
+
+
+/* =====================================================
+   REGISTRAR GASTO en Firestore
+===================================================== */
+async function registrarGasto() {
+  const desc  = document.getElementById('gasto-desc').value.trim();
+  const monto = parseFloat(document.getElementById('gasto-monto').value);
+  const cat   = document.getElementById('gasto-cat').value;
+
+  if (!desc)              { showToast('Escribe una descripción', 'error');    return; }
+  if (!monto || monto <= 0) { showToast('Ingresa un monto válido', 'error'); return; }
+
+  const gastoObj = {
+    id:        Date.now() + '_g',
+    type:      'gasto',
+    desc:      `[${cat}] ${desc}`,
+    amount:    monto,
+    date:      new Date().toLocaleString('es-MX'),
+    timestamp: Date.now()
+  };
+
+  try {
+    await saveGasto(gastoObj);
+    document.getElementById('gasto-desc').value  = '';
+    document.getElementById('gasto-monto').value = '';
+    showToast(`💾 Gasto de $${monto} registrado`, 'success');
+  } catch (e) {
+    showToast('⚠️ Guardado local. Se sincronizará al recuperar conexión.', 'info');
+    document.getElementById('gasto-desc').value  = '';
+    document.getElementById('gasto-monto').value = '';
+  }
+}
+window.registrarGasto = registrarGasto;
+
+
+/* =====================================================
+   DASHBOARD — Actualizar tarjetas e historial
+   Ahora lee de _ventas / _gastos (en memoria, reactivo)
+===================================================== */
+function refreshDashboard() {
+  const ventas = getVentas();
+  const gastos = getGastos();
+
+  const totalV   = ventas.reduce((a, v) => a + v.amount, 0);
+  const totalG   = gastos.reduce((a, g) => a + g.amount, 0);
+  const ganancia = totalV - totalG;
+
+  document.getElementById('stat-ventas').textContent   = '$' + totalV.toFixed(2);
+  document.getElementById('stat-gastos').textContent   = '$' + totalG.toFixed(2);
+  document.getElementById('stat-ganancia').textContent = '$' + ganancia.toFixed(2);
+
+  const gEl = document.getElementById('stat-ganancia');
+  gEl.style.color = ganancia >= 0 ? 'var(--green)' : 'var(--pink)';
+
+  // Combinar y ordenar: más recientes primero
+  const all = [
+    ...ventas.map(v => ({ ...v, type: 'venta' })),
+    ...gastos.map(g => ({ ...g, type: 'gasto' }))
+  ].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+  const listEl = document.getElementById('mov-list');
+  document.getElementById('mov-count').textContent = all.length + ' registros';
+
+  if (all.length === 0) {
+    listEl.innerHTML = '<div class="mov-empty">Sin movimientos aún</div>';
+    return;
+  }
+
+  // Guardamos el array para que deleteMovimiento lo use
+  listEl.dataset.all = JSON.stringify(all.slice(0, 50));
+
+  listEl.innerHTML = all.slice(0, 50).map((m, i) => `
+    <div class="mov-item" id="movrow-${i}">
+      <div class="mov-dot ${m.type}"></div>
+      <div class="mov-desc">
+        <div class="m-title">${m.desc}</div>
+        <div class="m-time">${m.date}</div>
+      </div>
+      <div class="mov-amount ${m.type}">
+        ${m.type === 'venta' ? '+' : '-'}$${parseFloat(m.amount).toFixed(2)}
+      </div>
+      <button class="mov-del-btn" title="Eliminar este registro"
+        onclick="deleteMovimiento(${i})">✕</button>
+    </div>
+  `).join('');
+}
+window.refreshDashboard = refreshDashboard;
+
+
+/* =====================================================
+   ELIMINAR MOVIMIENTO INDIVIDUAL
+   Usa el _docId de Firestore para borrar el documento.
+===================================================== */
+async function deleteMovimiento(index) {
+  const listEl = document.getElementById('mov-list');
+  const all    = JSON.parse(listEl.dataset.all || '[]');
+  const m      = all[index];
+  if (!m) return;
+
+  // Animación de salida inmediata (respuesta visual rápida)
+  const el = document.getElementById('movrow-' + index);
+  if (el) {
+    el.style.transition = 'opacity 0.2s, transform 0.2s';
+    el.style.opacity    = '0';
+    el.style.transform  = 'translateX(20px)';
+  }
+
+  // _docId es el ID del documento en Firestore
+  const coleccion = m.type === 'venta' ? COL_VENTAS : COL_GASTOS;
+  const docId     = m._docId || m.id; // usa _docId de Firestore, o id local
+
+  await deleteMovFirestore(coleccion, docId);
+
+  const label = m.type === 'venta' ? 'Venta eliminada' : 'Gasto eliminado';
+  showToast(`🗑 ${label} del historial`, 'info');
+  // onSnapshot actualizará la UI automáticamente
+}
+window.deleteMovimiento = deleteMovimiento;
+
+
+/* =====================================================
+   LIMPIAR TODO — borra ambas colecciones en Firestore
+===================================================== */
+async function confirmarLimpiar() {
+  const val = document.getElementById('limpiar-pwd').value;
+  if (val !== ADMIN_PASSWORD) {
+    document.getElementById('limpiar-error').textContent = '❌ Contraseña incorrecta';
+    document.getElementById('limpiar-pwd').value         = '';
+    document.getElementById('limpiar-pwd').focus();
+    return;
+  }
+
+  // Contraseña correcta — borrar todo en Firestore
+  try {
+    await deleteAllDocs(COL_VENTAS);
+    await deleteAllDocs(COL_GASTOS);
+  } catch (e) {
+    showToast('❌ Error al limpiar. Revisa conexión.', 'error');
+  }
+
+  ticket = {};
+  cerrarLimpiarModal();
+  renderTicket();
+  // onSnapshot se encargará del refresh del dashboard
+  showToast('🗑 Todos los datos han sido borrados', 'info');
+}
+window.confirmarLimpiar = confirmarLimpiar;
+
+function openModal()           { 
+  const m = document.getElementById('limpiar-modal');
+  document.getElementById('limpiar-pwd').value       = '';
+  document.getElementById('limpiar-error').textContent = '';
+  m.style.display = 'flex';
+  setTimeout(() => document.getElementById('limpiar-pwd').focus(), 100);
+}
+function cerrarLimpiarModal()  { document.getElementById('limpiar-modal').style.display = 'none'; }
+function closeModal()          { cerrarLimpiarModal(); }
+window.openModal          = openModal;
+window.cerrarLimpiarModal = cerrarLimpiarModal;
+window.closeModal         = closeModal;
+
+
+/* =====================================================
+   MODAL CONTRASEÑA (para acciones admin extras)
+===================================================== */
+let pendingAction = null;
+
+function requirePassword(action) {
+  pendingAction = action;
+  document.getElementById('pwd-input').value         = '';
+  document.getElementById('pwd-error').textContent   = '';
+  updateDots('');
+  document.getElementById('pwd-modal').classList.add('open');
+  setTimeout(() => document.getElementById('pwd-input').focus(), 100);
+}
+function closePwdModal() {
+  document.getElementById('pwd-modal').classList.remove('open');
+  pendingAction = null;
+}
+function onPwdInput() {
+  const val = document.getElementById('pwd-input').value;
+  updateDots(val);
+  document.getElementById('pwd-error').textContent = '';
+}
+function updateDots(val) {
+  for (let i = 0; i < 4; i++) {
+    document.getElementById('d' + i).classList.toggle('filled', i < val.length);
+  }
+}
+function togglePwdVis() {
+  const inp = document.getElementById('pwd-input');
+  const eye = document.getElementById('pwd-eye');
+  if (inp.type === 'password') { inp.type = 'text';     eye.textContent = '🙈'; }
+  else                         { inp.type = 'password'; eye.textContent = '👁'; }
+}
+function verifyPwd() {
+  const val = document.getElementById('pwd-input').value;
+  if (val === ADMIN_PASSWORD) {
+    closePwdModal();
+    if (pendingAction) pendingAction();
+  } else {
+    const box = document.querySelector('#pwd-modal .modal-box');
+    box.classList.remove('shake');
+    void box.offsetWidth;
+    box.classList.add('shake');
+    document.getElementById('pwd-error').textContent = '❌ Contraseña incorrecta. Intenta de nuevo.';
+    document.getElementById('pwd-input').value        = '';
+    updateDots('');
+    setTimeout(() => box.classList.remove('shake'), 400);
+  }
+}
+window.requirePassword = requirePassword;
+window.closePwdModal   = closePwdModal;
+window.onPwdInput      = onPwdInput;
+window.togglePwdVis    = togglePwdVis;
+window.verifyPwd       = verifyPwd;
+
+
+/* =====================================================
+   EXPORTAR CSV
+===================================================== */
+function exportCSV() {
+  const ventas = getVentas();
+  const gastos = getGastos();
+  const all    = [
+    ...ventas.map(v => ({ ...v, type: 'Venta' })),
+    ...gastos.map(g => ({ ...g, type: 'Gasto' }))
+  ];
+  if (all.length === 0) { showToast('No hay datos para exportar', 'info'); return; }
+
+  const header = 'Tipo,Descripción,Monto,Fecha\n';
+  const rows   = all.map(r =>
+    `"${r.type}","${r.desc}","${parseFloat(r.amount).toFixed(2)}","${r.date}"`
+  ).join('\n');
+
+  downloadFile('neveria-estelita.csv', header + rows, 'text/csv');
+  showToast('📥 CSV exportado', 'success');
+}
+
+/* =====================================================
+   EXPORTAR TXT
+===================================================== */
+function exportTXT() {
+  const ventas   = getVentas();
+  const gastos   = getGastos();
+  const totalV   = ventas.reduce((a, v) => a + v.amount, 0);
+  const totalG   = gastos.reduce((a, g) => a + g.amount, 0);
+  const ganancia = totalV - totalG;
+
+  let txt = `========================================\n`;
+  txt    += `    ${NOMBRE_NEGOCIO.toUpperCase()} — RESUMEN GENERAL\n`;
+  txt    += `    ${new Date().toLocaleString('es-MX')}\n`;
+  txt    += `========================================\n\n`;
+  txt    += `💳 TOTAL VENTAS:   $${totalV.toFixed(2)}\n`;
+  txt    += `🧾 TOTAL GASTOS:   $${totalG.toFixed(2)}\n`;
+  txt    += `📈 GANANCIA NETA:  $${ganancia.toFixed(2)}\n`;
+  txt    += `\n--- VENTAS ---\n`;
+  ventas.forEach(v => { txt += `  [${v.date}] ${v.desc} → +$${parseFloat(v.amount).toFixed(2)}\n`; });
+  txt    += `\n--- GASTOS ---\n`;
+  gastos.forEach(g => { txt += `  [${g.date}] ${g.desc} → -$${parseFloat(g.amount).toFixed(2)}\n`; });
+  txt    += `\n========================================\n`;
+
+  downloadFile('resumen-estelita.txt', txt, 'text/plain');
+  showToast('📄 Resumen TXT exportado', 'success');
+}
+
+function downloadFile(name, content, type) {
+  const blob = new Blob([content], { type });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = name; a.click();
+  URL.revokeObjectURL(url);
+}
+
+window.exportCSV  = exportCSV;
+window.exportTXT  = exportTXT;
+
+
+/* =====================================================
+   GRÁFICA (Chart.js) — igual que el original
+===================================================== */
+let chartInstance    = null;
+let currentChartType = 'barras';
+
+function switchChart(type, btn) {
+  currentChartType = type;
+  document.querySelectorAll('.chart-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderChart();
+}
+window.switchChart = switchChart;
+
+function renderChart() {
+  const ventas = getVentas();
+  const gastos = getGastos();
+
+  const dias = {};
+  [...ventas, ...gastos].forEach(m => {
+    const fecha = m.date.split(',')[0].trim();
+    if (!dias[fecha]) dias[fecha] = { ventas: 0, gastos: 0 };
+    if (m.type === 'venta') dias[fecha].ventas += m.amount;
+    else                    dias[fecha].gastos += m.amount;
+  });
+
+  const labels = Object.keys(dias).slice(-7);
+  const dataV  = labels.map(d => dias[d].ventas);
+  const dataG  = labels.map(d => dias[d].gastos);
+  const totalV = ventas.reduce((a, v) => a + v.amount, 0);
+  const totalG = gastos.reduce((a, g) => a + g.amount, 0);
+
+  const canvas = document.getElementById('main-chart');
+  if (!canvas) return;
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+
+  const ctx = canvas.getContext('2d');
+  const commonOptions = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { labels: { color: '#f0eeff', font: { family: 'DM Sans', size: 12 }, boxWidth: 14 } },
+      tooltip: {
+        backgroundColor: '#1a1a28', borderColor: 'rgba(255,255,255,0.08)', borderWidth: 1,
+        titleColor: '#f0eeff', bodyColor: '#7a7a9a',
+        callbacks: { label: ctx => ' $' + ctx.parsed.toFixed(2) }
+      }
+    }
+  };
+
+  if (currentChartType === 'barras') {
+    const hasData = labels.length > 0;
+    chartInstance = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: hasData ? labels : ['Sin datos aún'],
+        datasets: [
+          { label: 'Ventas', data: hasData ? dataV : [0], backgroundColor: 'rgba(63,164,255,0.7)', borderColor: '#3fa4ff', borderWidth: 2, borderRadius: 8 },
+          { label: 'Gastos', data: hasData ? dataG : [0], backgroundColor: 'rgba(255,63,164,0.7)', borderColor: '#ff3fa4', borderWidth: 2, borderRadius: 8 }
+        ]
+      },
+      options: {
+        ...commonOptions,
+        scales: {
+          x: { ticks: { color: '#7a7a9a', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+          y: { ticks: { color: '#7a7a9a', font: { size: 11 }, callback: v => '$' + v }, grid: { color: 'rgba(255,255,255,0.06)' } }
+        }
+      }
+    });
+  } else {
+    const ganancia = Math.max(0, totalV - totalG);
+    chartInstance = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Ventas', 'Gastos', 'Ganancia'],
+        datasets: [{
+          data: [totalV || 0.01, totalG || 0.01, ganancia || 0.01],
+          backgroundColor: ['rgba(63,164,255,0.8)', 'rgba(255,63,164,0.8)', 'rgba(63,255,164,0.8)'],
+          borderColor: ['#3fa4ff', '#ff3fa4', '#3fffa4'],
+          borderWidth: 2, hoverOffset: 10,
+        }]
+      },
+      options: {
+        ...commonOptions, cutout: '65%',
+        plugins: { ...commonOptions.plugins, tooltip: { ...commonOptions.plugins.tooltip, callbacks: { label: ctx => ` $${ctx.parsed.toFixed(2)}` } } }
+      }
+    });
+  }
+}
+window.renderChart = renderChart;
+
+
+/* =====================================================
+   TOAST
+===================================================== */
+function showToast(msg, type = 'info') {
+  const container = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className   = `toast ${type}`;
+  t.textContent = msg;
+  container.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity 0.4s'; setTimeout(() => t.remove(), 400); }, 2800);
+}
+window.showToast = showToast;
+
+
+/* =====================================================
+   INICIALIZAR APP
+   Todo arranca aquí al cargar la página.
+===================================================== */
+cargarDatosLocales();    // 1. Carga datos locales PRIMERO (funciona sin internet)
+renderCatalog();         // 2. Renderiza el catálogo de productos
+refreshDashboard();      // 3. Muestra los datos locales en el dashboard
+suscribirFirestore();    // 4. Conecta con Firebase si hay internet
+initConexionIndicator(); // 5. Badge de estado online/offline
+
+</script>
+<style>
+  /* =============================================
+     CSS VARIABLES & RESET
+  ============================================= */
+  :root {
+    --bg:        #0a0a0f;
+    --bg2:       #111118;
+    --bg3:       #1a1a28;
+    --glass:     rgba(255,255,255,0.04);
+    --glass-b:   rgba(255,255,255,0.08);
+    --border:    rgba(255,255,255,0.07);
+
+    --pink:   #ff3fa4;
+    --blue:   #3fa4ff;
+    --purple: #9b3fff;
+    --green:  #3fffa4;
+    --yellow: #ffe23f;
+
+    --text:   #f0eeff;
+    --muted:  #7a7a9a;
+    --radius: 18px;
+    --radius-sm: 10px;
+    --shadow: 0 8px 40px rgba(0,0,0,0.6);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Noise texture overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0;
+  }
+
+  /* =============================================
+     LAYOUT
+  ============================================= */
+  .app-shell { position: relative; z-index: 1; display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* ---- HEADER ---- */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 28px;
+    background: rgba(10,10,15,0.8);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.35rem; letter-spacing: -0.5px; }
+  .logo span { background: linear-gradient(90deg, var(--pink), var(--purple), var(--blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .logo small { display: block; font-size: 0.65rem; font-weight: 400; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; -webkit-text-fill-color: var(--muted); }
+
+  /* ---- TABS ---- */
+  nav { display: flex; gap: 6px; }
+  .tab-btn {
+    padding: 8px 18px; border-radius: 50px; border: none; cursor: pointer;
+    font-family: 'DM Sans', sans-serif; font-size: 0.85rem; font-weight: 500;
+    background: var(--glass); color: var(--muted);
+    border: 1px solid var(--border);
+    transition: all 0.25s;
+  }
+  .tab-btn.active {
+    background: linear-gradient(135deg, var(--pink), var(--purple));
+    color: #fff; border-color: transparent;
+    box-shadow: 0 0 20px rgba(155,63,255,0.35);
+  }
+  .tab-btn:hover:not(.active) { color: var(--text); border-color: var(--purple); }
+
+  /* ---- SECTIONS ---- */
+  .section { display: none; padding: 28px; animation: fadeIn 0.3s ease; }
+  .section.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* =============================================
+     UTILITY COMPONENTS
+  ============================================= */
+  .card {
+    background: var(--glass);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    backdrop-filter: blur(12px);
+    padding: 20px;
+  }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 10px 20px; border-radius: 50px; border: none; cursor: pointer;
+    font-family: 'DM Sans', sans-serif; font-size: 0.9rem; font-weight: 500;
+    transition: all 0.2s; letter-spacing: 0.2px;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--pink), var(--purple));
+    color: #fff; box-shadow: 0 0 24px rgba(255,63,164,0.3);
+  }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 0 32px rgba(255,63,164,0.5); }
+  .btn-success {
+    background: linear-gradient(135deg, var(--green), #00c896);
+    color: #0a0a0f; box-shadow: 0 0 24px rgba(63,255,164,0.3); font-weight: 700;
+  }
+  .btn-success:hover { transform: translateY(-2px); box-shadow: 0 0 32px rgba(63,255,164,0.5); }
+  .btn-danger { background: rgba(255,60,80,0.15); color: #ff3c50; border: 1px solid rgba(255,60,80,0.3); }
+  .btn-danger:hover { background: rgba(255,60,80,0.25); }
+  .btn-ghost { background: var(--glass); color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--blue); }
+  .btn-sm { padding: 6px 14px; font-size: 0.8rem; }
+  .btn:active { transform: scale(0.97); }
+
+  input, select, textarea {
+    background: var(--glass-b); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    color: var(--text); padding: 10px 14px; font-family: 'DM Sans', sans-serif; font-size: 0.9rem;
+    outline: none; transition: border-color 0.2s; width: 100%;
+  }
+  input:focus, select:focus { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(155,63,255,0.15); }
+  select option { background: var(--bg3); }
+  label { font-size: 0.8rem; color: var(--muted); display: block; margin-bottom: 6px; font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase; }
+
+  h2 { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 1.3rem; margin-bottom: 20px; }
+  h3 { font-family: 'Syne', sans-serif; font-weight: 600; font-size: 1rem; margin-bottom: 12px; }
+
+  /* Neon accent text */
+  .accent-pink   { color: var(--pink); }
+  .accent-blue   { color: var(--blue); }
+  .accent-green  { color: var(--green); }
+  .accent-purple { color: var(--purple); }
+
+  /* =============================================
+     POS SECTION
+  ============================================= */
+  .pos-grid { display: grid; grid-template-columns: 1fr 360px; gap: 24px; }
+  @media (max-width: 900px) { .pos-grid { grid-template-columns: 1fr; } }
+
+  /* Product catalog */
+  .catalog-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 1.1rem; margin-bottom: 16px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 12px; }
+
+  .product-btn {
+    background: var(--glass);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 14px;
+    cursor: pointer; text-align: center;
+    transition: all 0.2s; position: relative; overflow: hidden;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+  .product-btn::before {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(135deg, var(--pink), var(--purple));
+    opacity: 0; transition: opacity 0.2s;
+  }
+  .product-btn:hover { transform: translateY(-3px); border-color: var(--pink); box-shadow: 0 8px 32px rgba(255,63,164,0.2); }
+  .product-btn:hover::before { opacity: 0.08; }
+  .product-btn:active { transform: scale(0.96); }
+  .product-btn .emoji { font-size: 2rem; position: relative; z-index: 1; }
+  .product-btn .p-name { font-size: 0.82rem; font-weight: 500; color: var(--text); position: relative; z-index: 1; }
+  .product-btn .p-price {
+    font-family: 'Syne', sans-serif; font-size: 0.95rem; font-weight: 700;
+    color: var(--pink); position: relative; z-index: 1;
+  }
+
+  /* Ticket */
+  .ticket-card { display: flex; flex-direction: column; gap: 16px; }
+  .ticket-header { display: flex; align-items: center; justify-content: space-between; }
+  .ticket-items { max-height: 340px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
+  .ticket-items::-webkit-scrollbar { width: 4px; }
+  .ticket-items::-webkit-scrollbar-track { background: transparent; }
+  .ticket-items::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .ticket-item {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--glass-b); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 10px 12px;
+    animation: slideIn 0.2s ease;
+  }
+  @keyframes slideIn { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
+  .ticket-item .ti-name { flex: 1; font-size: 0.88rem; font-weight: 500; }
+  .ticket-item .ti-sub { font-family: 'Syne', sans-serif; font-size: 0.88rem; color: var(--green); font-weight: 600; white-space: nowrap; }
+  .qty-ctrl { display: flex; align-items: center; gap: 6px; }
+  .qty-ctrl button {
+    width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--glass); color: var(--text); cursor: pointer; font-size: 1rem;
+    display: flex; align-items: center; justify-content: center; transition: all 0.15s;
+  }
+  .qty-ctrl button:hover { background: var(--purple); border-color: var(--purple); }
+  .qty-ctrl .qty { font-family: 'Syne', sans-serif; font-size: 0.9rem; font-weight: 700; width: 20px; text-align: center; }
+
+  .ticket-empty { text-align: center; color: var(--muted); padding: 40px 0; font-size: 0.9rem; }
+  .ticket-empty .emoji-big { font-size: 3rem; margin-bottom: 8px; }
+
+  .ticket-footer { border-top: 1px solid var(--border); padding-top: 14px; }
+  .ticket-total { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .ticket-total span:first-child { color: var(--muted); font-size: 0.9rem; }
+  .ticket-total .total-num {
+    font-family: 'Syne', sans-serif; font-size: 1.6rem; font-weight: 800;
+    background: linear-gradient(90deg, var(--green), var(--blue));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .btn-cobrar { width: 100%; padding: 16px; font-size: 1.05rem; font-weight: 700; border-radius: var(--radius); }
+
+  /* =============================================
+     ACCOUNTING SECTION
+  ============================================= */
+  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 28px; }
+  @media (max-width: 640px) { .stats-grid { grid-template-columns: 1fr; } }
+
+  .stat-card {
+    background: var(--glass); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 22px 20px; position: relative; overflow: hidden;
+  }
+  .stat-card::after {
+    content: ''; position: absolute; bottom: -30px; right: -20px;
+    width: 90px; height: 90px; border-radius: 50%;
+    opacity: 0.08;
+  }
+  .stat-card.ventas::after  { background: var(--blue);   }
+  .stat-card.gastos::after  { background: var(--pink);   }
+  .stat-card.ganancia::after{ background: var(--green);  }
+
+  .stat-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 8px; }
+  .stat-value {
+    font-family: 'Syne', sans-serif; font-size: 2rem; font-weight: 800; line-height: 1;
+  }
+  .stat-card.ventas  .stat-value { color: var(--blue);  }
+  .stat-card.gastos  .stat-value { color: var(--pink);  }
+  .stat-card.ganancia .stat-value { color: var(--green); }
+  .stat-icon { font-size: 1.5rem; margin-bottom: 10px; }
+
+  /* Accounting layout */
+  .acc-grid { display: grid; grid-template-columns: 320px 1fr; gap: 24px; }
+  @media (max-width: 900px) { .acc-grid { grid-template-columns: 1fr; } }
+
+  /* Expense form */
+  .form-group { margin-bottom: 14px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* History list */
+  .mov-list { display: flex; flex-direction: column; gap: 8px; max-height: 380px; overflow-y: auto; padding-right: 4px; }
+  .mov-list::-webkit-scrollbar { width: 4px; }
+  .mov-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .mov-item {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--glass); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 12px 14px;
+  }
+  .mov-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .mov-dot.venta  { background: var(--blue);  box-shadow: 0 0 8px var(--blue); }
+  .mov-dot.gasto  { background: var(--pink);  box-shadow: 0 0 8px var(--pink); }
+  .mov-desc { flex: 1; }
+  .mov-desc .m-title { font-size: 0.88rem; font-weight: 500; }
+  .mov-desc .m-time  { font-size: 0.72rem; color: var(--muted); }
+  .mov-amount { font-family: 'Syne', sans-serif; font-size: 0.92rem; font-weight: 700; white-space: nowrap; }
+  .mov-amount.venta { color: var(--blue); }
+  .mov-amount.gasto { color: var(--pink); }
+
+  .mov-del-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--muted); font-size: 0.85rem; padding: 4px 6px;
+    border-radius: 6px; transition: all 0.15s; flex-shrink: 0;
+    opacity: 0; /* oculto por defecto, aparece en hover del item */
+  }
+  .mov-item:hover .mov-del-btn { opacity: 1; }
+  .mov-del-btn:hover { background: rgba(255,60,80,0.15); color: #ff3c50; }
+
+  .mov-empty { text-align: center; color: var(--muted); padding: 30px; font-size: 0.88rem; }
+
+  /* =============================================
+     UTILITY ACTIONS BAR
+  ============================================= */
+  .actions-bar {
+    display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px;
+    padding-top: 20px; border-top: 1px solid var(--border);
+  }
+
+  /* =============================================
+     TOAST
+  ============================================= */
+  #toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
+  .toast {
+    background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 12px 18px; font-size: 0.88rem; min-width: 220px;
+    display: flex; align-items: center; gap: 10px;
+    animation: toastIn 0.3s ease; box-shadow: var(--shadow);
+    backdrop-filter: blur(12px);
+  }
+  .toast.success { border-left: 3px solid var(--green); }
+  .toast.error   { border-left: 3px solid var(--pink); }
+  .toast.info    { border-left: 3px solid var(--blue); }
+  @keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+
+  /* =============================================
+     MODAL CONFIRM
+  ============================================= */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(6px); z-index: 999;
+    align-items: center; justify-content: center;
+    display: none;
+  }
+  .modal-overlay.open { display: flex; animation: fadeIn 0.2s ease; }
+  .modal-box {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 32px; max-width: 380px; width: 90%;
+    text-align: center; box-shadow: var(--shadow);
+  }
+  .modal-box h3 { font-size: 1.2rem; margin-bottom: 10px; }
+  .modal-box p { color: var(--muted); font-size: 0.9rem; margin-bottom: 24px; }
+  .modal-actions { display: flex; gap: 10px; justify-content: center; }
+
+  /* =============================================
+     SCROLLBAR GLOBAL
+  ============================================= */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  /* =============================================
+     MODAL CONTRASEÑA
+  ============================================= */
+  .pwd-input-wrap { position: relative; margin-bottom: 20px; }
+  .pwd-input-wrap input { padding-right: 44px; letter-spacing: 3px; font-size: 1.1rem; text-align: center; }
+  .pwd-toggle {
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; cursor: pointer; color: var(--muted); font-size: 1.1rem;
+    transition: color 0.2s;
+  }
+  .pwd-toggle:hover { color: var(--text); }
+  .pwd-dots { display: flex; justify-content: center; gap: 8px; margin-bottom: 6px; }
+  .pwd-dot-ind {
+    width: 10px; height: 10px; border-radius: 50%;
+    border: 2px solid var(--border); transition: all 0.2s;
+  }
+  .pwd-dot-ind.filled { background: var(--purple); border-color: var(--purple); box-shadow: 0 0 8px var(--purple); }
+  .shake { animation: shake 0.4s ease; }
+  @keyframes shake {
+    0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 40%{transform:translateX(8px)}
+    60%{transform:translateX(-5px)} 80%{transform:translateX(5px)}
+  }
+  .pwd-error { color: var(--pink); font-size: 0.82rem; margin-top: -12px; margin-bottom: 14px; min-height: 18px; text-align:center; }
+  .pwd-hint { font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 12px; }
+
+  /* =============================================
+     GRÁFICA
+  ============================================= */
+  .chart-section { margin-top: 28px; }
+  .chart-card { padding: 24px; }
+  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+  .chart-tabs { display: flex; gap: 6px; }
+  .chart-tab {
+    padding: 6px 14px; border-radius: 50px; border: 1px solid var(--border);
+    background: var(--glass); color: var(--muted); cursor: pointer;
+    font-family: 'DM Sans', sans-serif; font-size: 0.78rem; font-weight: 500;
+    transition: all 0.2s;
+  }
+  .chart-tab.active { background: linear-gradient(135deg,var(--blue),var(--purple)); color:#fff; border-color:transparent; }
+  .chart-wrap { position: relative; height: 280px; }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">
+      🍦 <span>Nevería Estelita</span>
+      <small>POS & Contabilidad</small>
+    </div>
+    <nav style="display:flex;align-items:center;gap:12px;">
+      <span id="conexion-badge" style="font-size:0.7rem;color:var(--muted);white-space:nowrap;">⏳ Conectando...</span>
+      <button class="tab-btn active" onclick="showTab('pos')">🧾 Caja</button>
+      <button class="tab-btn" onclick="showTab('acc')">📊 Contabilidad</button>
+    </nav>
+  </header>
+
+  <!-- Banner de error Firebase (visible solo si las credenciales fallan) -->
+  <div id="firebase-banner" style="display:none;background:rgba(255,63,164,0.12);border-bottom:1px solid rgba(255,63,164,0.3);color:#ff3fa4;font-size:0.82rem;padding:10px 28px;text-align:center;position:relative;z-index:99;"></div>
+
+  <!-- ======================================
+       SECCIÓN: PUNTO DE VENTA
+  ======================================= -->
+  <section id="sec-pos" class="section active">
+    <div class="pos-grid">
+
+      <!-- Catálogo de Productos -->
+      <div>
+        <p class="catalog-title">🧊 Catálogo de Productos</p>
+        <div class="catalog-grid" id="catalog-grid">
+          <!-- Generado por JS -->
+        </div>
+      </div>
+
+      <!-- Ticket Actual -->
+      <div class="card ticket-card">
+        <div class="ticket-header">
+          <h3>🧾 Ticket Actual</h3>
+          <button class="btn btn-ghost btn-sm" onclick="clearTicket()">🗑 Limpiar</button>
+        </div>
+
+        <div id="ticket-items" class="ticket-items">
+          <div class="ticket-empty">
+            <div class="emoji-big">🍦</div>
+            <p>Agrega productos<br>para comenzar</p>
+          </div>
+        </div>
+
+        <div class="ticket-footer">
+          <div class="ticket-total">
+            <span>Total:</span>
+            <span class="total-num" id="ticket-total">$0</span>
+          </div>
+          <button class="btn btn-success btn-cobrar" onclick="cobrar()">
+            💳 Cobrar <span id="btn-cobrar-total">$0</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ======================================
+       SECCIÓN: CONTABILIDAD
+  ======================================= -->
+  <section id="sec-acc" class="section">
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-card ventas">
+        <div class="stat-icon">💳</div>
+        <div class="stat-label">Total Ventas</div>
+        <div class="stat-value" id="stat-ventas">$0</div>
+      </div>
+      <div class="stat-card gastos">
+        <div class="stat-icon">🧾</div>
+        <div class="stat-label">Total Gastos</div>
+        <div class="stat-value" id="stat-gastos">$0</div>
+      </div>
+      <div class="stat-card ganancia">
+        <div class="stat-icon">📈</div>
+        <div class="stat-label">Ganancia Neta</div>
+        <div class="stat-value" id="stat-ganancia">$0</div>
+      </div>
+    </div>
+
+    <div class="acc-grid">
+
+      <!-- Registrar Gasto -->
+      <div class="card">
+        <h3>➕ Registrar Gasto</h3>
+        <div class="form-group">
+          <label>Descripción</label>
+          <input type="text" id="gasto-desc" placeholder="Ej. Compra de hielo, vasos..." />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Monto ($)</label>
+            <input type="number" id="gasto-monto" placeholder="0.00" min="0" step="0.01"/>
+          </div>
+          <div class="form-group">
+            <label>Categoría</label>
+            <select id="gasto-cat">
+              <option value="Insumos">🧊 Insumos</option>
+              <option value="Empaque">📦 Empaque</option>
+              <option value="Ingredientes">🍓 Ingredientes</option>
+              <option value="Servicios">💡 Servicios</option>
+              <option value="Limpieza">🧹 Limpieza</option>
+              <option value="Otro">🔖 Otro</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-primary" style="width:100%" onclick="registrarGasto()">
+          💾 Guardar Gasto
+        </button>
+      </div>
+
+      <!-- Historial -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <h3 style="margin:0">📋 Últimos Movimientos</h3>
+          <span id="mov-count" style="font-size:0.75rem;color:var(--muted)">0 registros</span>
+        </div>
+        <div id="mov-list" class="mov-list">
+          <div class="mov-empty">Sin movimientos aún</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Acciones de utilidad -->
+    <div class="actions-bar">
+      <button class="btn btn-ghost" onclick="exportCSV()">📥 Exportar CSV</button>
+      <button class="btn btn-ghost" onclick="exportTXT()">📄 Resumen TXT</button>
+      <button class="btn btn-danger" onclick="openModal()">🗑 Limpiar Todo</button>
+    </div>
+
+    <!-- GRÁFICA -->
+    <div class="chart-section">
+      <div class="card chart-card">
+        <div class="chart-header">
+          <h3 style="margin:0">📊 Gráfica de Movimientos</h3>
+          <div class="chart-tabs">
+            <button class="chart-tab active" onclick="switchChart('barras', this)">📊 Barras</button>
+            <button class="chart-tab" onclick="switchChart('dona', this)">🍩 Dona</button>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="main-chart"></canvas>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+</div><!-- end app-shell -->
+
+<!-- TOAST -->
+<div id="toast-container"></div>
+
+<!-- MODAL CONTRASEÑA (para futuras acciones admin si se necesita) -->
+<div class="modal-overlay" id="pwd-modal">
+  <div class="modal-box">
+    <div style="font-size:2.5rem;margin-bottom:12px">🔐</div>
+    <h3>Acceso de Administrador</h3>
+    <p>Solo el dueño o encargado puede realizar esta acción.</p>
+    <div class="pwd-dots" id="pwd-dots">
+      <div class="pwd-dot-ind" id="d0"></div>
+      <div class="pwd-dot-ind" id="d1"></div>
+      <div class="pwd-dot-ind" id="d2"></div>
+      <div class="pwd-dot-ind" id="d3"></div>
+    </div>
+    <div class="pwd-input-wrap">
+      <input type="password" id="pwd-input" maxlength="4" placeholder="••••"
+        oninput="onPwdInput()" onkeydown="if(event.key==='Enter') verifyPwd()" autocomplete="off"/>
+      <button class="pwd-toggle" onclick="togglePwdVis()" id="pwd-eye">👁</button>
+    </div>
+    <div class="pwd-error" id="pwd-error"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closePwdModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="verifyPwd()">🔓 Entrar</button>
+    </div>
+    <p class="pwd-hint">¿Olvidaste la contraseña? Edita <code>ADMIN_PASSWORD</code> en el código.</p>
+  </div>
+</div>
+
+<!-- MODAL LIMPIAR TODO — contraseña + confirmación en un solo paso -->
+<div id="limpiar-modal" style="
+  display:none; position:fixed; inset:0; z-index:9999;
+  background:rgba(0,0,0,0.75); backdrop-filter:blur(6px);
+  align-items:center; justify-content:center;
+">
+  <div style="
+    background:#1a1a28; border:1px solid rgba(255,255,255,0.1);
+    border-radius:18px; padding:32px; max-width:380px; width:90%;
+    text-align:center; box-shadow:0 8px 40px rgba(0,0,0,0.6);
+  ">
+    <div style="font-size:2.2rem;margin-bottom:10px">🗑️🔐</div>
+    <h3 style="font-family:'Syne',sans-serif;font-size:1.15rem;margin-bottom:8px">Limpiar Todo</h3>
+    <p style="color:#7a7a9a;font-size:0.88rem;margin-bottom:20px">
+      Ingresa la contraseña de administrador para borrar <strong style="color:#f0eeff">todos</strong> los datos permanentemente.
+    </p>
+    <input type="password" id="limpiar-pwd" maxlength="4" placeholder="Contraseña (4 dígitos)"
+      style="text-align:center;letter-spacing:4px;font-size:1.1rem;margin-bottom:10px"
+      onkeydown="if(event.key==='Enter') confirmarLimpiar()"
+      autocomplete="off"/>
+    <div id="limpiar-error" style="color:#ff3fa4;font-size:0.82rem;min-height:20px;margin-bottom:14px"></div>
+    <div style="display:flex;gap:10px;justify-content:center">
+      <button onclick="cerrarLimpiarModal()"
+        style="padding:10px 20px;border-radius:50px;border:1px solid rgba(255,255,255,0.1);
+               background:rgba(255,255,255,0.04);color:#7a7a9a;cursor:pointer;font-family:'DM Sans',sans-serif">
+        Cancelar
+      </button>
+      <button onclick="confirmarLimpiar()"
+        style="padding:10px 20px;border-radius:50px;border:none;
+               background:rgba(255,60,80,0.2);color:#ff3c50;border:1px solid rgba(255,60,80,0.35);
+               cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:600">
+        🗑 Sí, borrar todo
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Script original eliminado: migrado a Firebase (type="module") arriba -->
+
+
+
+</body>
+</html>
