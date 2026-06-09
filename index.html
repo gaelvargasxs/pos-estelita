@@ -27,11 +27,7 @@ const writeBatch    = (db) => db.batch();
 const orderBy       = (field, dir) => firebase.firestore.Query ? field : field;
 const query         = (ref, ...args) => ref.orderBy('timestamp', 'asc');
 const enableIndexedDbPersistence = (db) => db.enablePersistence().catch(()=>{});
-function onSnapshot(ref, cb, errCb) { return ref.onSnapshot(snap => {
-  // Convert compat snapshot to match modular API shape
-  snap.docs = snap.docs || [];
-  cb(snap);
-}, errCb); }
+function onSnapshot(ref, cb, errCb) { return ref.onSnapshot(cb, errCb); }
 
 /* =====================================================
    ██████╗  ██████╗ ███╗   ██╗███████╗██╗ ██████╗
@@ -279,19 +275,17 @@ async function sincronizarPendientes() {
 }
 
 /* ── Listener en tiempo real de Firestore ──────────
-   Cuando hay internet, Firestore actualiza los datos
-   en tiempo real desde cualquier dispositivo.        */
+   Firestore es la ÚNICA fuente de verdad.
+   onSnapshot reemplaza _ventas/_gastos completo cada vez.
+   Sin mezclas, sin duplicados posibles.               */
 function suscribirFirestore() {
   if (!firebaseOk) return;
 
   onSnapshot(
     query(collection(db, COL_VENTAS), orderBy('timestamp', 'asc')),
     snap => {
-      // Mezclar datos de Firestore con los locales no sincronizados
-      const deFirestore = snap.docs.map(d => ({ ...d.data(), _docId: d.id, _sync: true }));
-      const soloLocales = _ventas.filter(v => !v._sync && !v._docId);
-      _ventas = [...deFirestore, ...soloLocales];
-      localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
+      // Reemplazar COMPLETO — Firestore manda la lista definitiva
+      _ventas = snap.docs.map(d => ({ ...d.data(), _docId: d.id }));
       refreshDashboard();
       renderChart();
     },
@@ -301,20 +295,12 @@ function suscribirFirestore() {
   onSnapshot(
     query(collection(db, COL_GASTOS), orderBy('timestamp', 'asc')),
     snap => {
-      const deFirestore = snap.docs.map(d => ({ ...d.data(), _docId: d.id, _sync: true }));
-      const soloLocales = _gastos.filter(g => !g._sync && !g._docId);
-      _gastos = [...deFirestore, ...soloLocales];
-      localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
+      _gastos = snap.docs.map(d => ({ ...d.data(), _docId: d.id }));
       refreshDashboard();
       renderChart();
     },
     err => console.warn('[Firestore] Sin conexión, usando datos locales.')
   );
-
-  // Sincronizar pendientes cada vez que vuelve el internet
-  window.addEventListener('online', () => {
-    setTimeout(sincronizarPendientes, 2000);
-  });
 }
 
 /* =====================================================
@@ -871,20 +857,16 @@ window.showToast = showToast;
    INICIALIZAR APP
    Todo arranca aquí al cargar la página.
 ===================================================== */
-cargarDatosLocales();    // 1. Carga datos locales (solo si no hay internet)
-renderCatalog();         // 2. Renderiza el catálogo de productos
-
-// ⚠️ FIX DUPLICADOS: si Firebase está disponible, Firestore es la
-// única fuente de verdad. Vaciamos lo que cargó localStorage para
-// que onSnapshot no mezcle datos y duplique registros.
-if (firebaseOk && navigator.onLine) {
-  _ventas = [];
-  _gastos = [];
+// Si hay Firebase online: Firestore es la fuente de verdad, no usamos localStorage
+// Si no hay internet: cargamos localStorage como respaldo offline
+if (!firebaseOk || !navigator.onLine) {
+  cargarDatosLocales();
 }
 
-refreshDashboard();      // 3. Muestra dashboard (onSnapshot lo llenará en ms)
-suscribirFirestore();    // 4. Conecta Firebase — onSnapshot es la fuente real
-initConexionIndicator(); // 5. Badge de estado online/offline
+renderCatalog();         // Renderiza catálogo de productos
+refreshDashboard();      // Dashboard inicial (onSnapshot lo actualizará)
+suscribirFirestore();    // Conecta Firestore — reemplaza datos al llegar
+initConexionIndicator(); // Badge online/offline
 
 </script>
 <style>
