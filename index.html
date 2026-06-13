@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Nevería Estelita — POS & Contabilidad</title>
+<title>Nevería Estelita — POS & Contabilidad v1</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 
@@ -14,7 +14,7 @@
 <script type="module">
 import { initializeApp }                          from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore, collection, addDoc,
-         getDocs, deleteDoc, doc, onSnapshot,
+         getDocs, deleteDoc, doc,
          enableIndexedDbPersistence, query,
          orderBy, writeBatch }                    from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -58,18 +58,92 @@ const ADMIN_PASSWORD = '1234';
    Modifica nombres, precios y emojis según el menú.
    Formato: { name, price, emoji }                   */
 const PRODUCTS = [
-  { name: "Helado Sencillo",  price: 40,  emoji: "🍦" },
-  { name: "Helado Doble",     price: 60,  emoji: "🍨" },
-  { name: "Helado Triple",    price: 80,  emoji: "🍧" },
-  { name: "Raspado",          price: 60,  emoji: "🧊" },
-  { name: "Mangonada",        price: 50,  emoji: "🥭" },
-  { name: "Chamoyada",        price: 55,  emoji: "🌶️" },
-  { name: "Nachos",           price: 45,  emoji: "🧀" },
-  { name: "Fruta con Crema",  price: 65,  emoji: "🍓" },
-  { name: "Tostada de Nieve", price: 35,  emoji: "🍞" },
-  { name: "Agua Fresca",      price: 25,  emoji: "🥤" },
-  { name: "Paleta",           price: 20,  emoji: "🍡" },
-  { name: "Sundae",           price: 70,  emoji: "🍮" },
+
+  // ── FRESAS CON CREMA ─────────────────────────────
+  { section: "Fresas con Crema", name: "Fresas con Crema Sencillas", price: 70,  emoji: "🍓" },
+  { section: "Fresas con Crema", name: "Fresas con Nieve",           price: 95,  emoji: "🍓" },
+  { section: "Fresas con Crema", name: "Fresas con Cheesecake",      price: 100, emoji: "🍓" },
+  { section: "Fresas con Crema", name: "Fresas con Chocolate",       price: 100, emoji: "🍫" },
+  { section: "Fresas con Crema", name: "Fresas Dubai",               price: 115, emoji: "✨" },
+
+  // ── NIEVE DE RASPA ───────────────────────────────
+  { section: "Nieve de Raspa", name: "Raspa de Agua",        price: 30, emoji: "🧊" },
+  { section: "Nieve de Raspa", name: "Raspa de Mermelada",   price: 65, emoji: "🧊" },
+
+  // ── NIEVE DE CREMA ───────────────────────────────
+  { section: "Nieve de Crema", name: "Vaso Chico",     price: 35,  emoji: "🍦" },
+  { section: "Nieve de Crema", name: "Vaso Mediano",   price: 50,  emoji: "🍦" },
+  { section: "Nieve de Crema", name: "Vaso Grande",    price: 100, emoji: "🍦" },
+  { section: "Nieve de Crema", name: "Barquillo",      price: 35,  emoji: "🍦" },
+  { section: "Nieve de Crema", name: "Canasta",        price: 55,  emoji: "🍦" },
+  { section: "Nieve de Crema", name: "Lto de Nieve",   price: 140, emoji: "🍦" },
+
+  // ── ESPECIALIDADES ───────────────────────────────
+  { section: "Especialidades", name: "Tropicana",    price: 90, emoji: "🌴" },
+  { section: "Especialidades", name: "Changuito",    price: 90, emoji: "🐒" },
+  { section: "Especialidades", name: "Gloria",       price: 90, emoji: "⭐" },
+  { section: "Especialidades", name: "Obispo",       price: 85, emoji: "🍧" },
+  { section: "Especialidades", name: "Picafresa",    price: 90, emoji: "🌶️" },
+  { section: "Especialidades", name: "Banana Split", price: 90, emoji: "🍌" },
+
+  // ── CHOCOLATÍSIMOS ───────────────────────────────
+  { section: "Chocolatísimos", name: "Magnum",         price: 100, emoji: "🍫" },
+  { section: "Chocolatísimos", name: "Ferrero",        price: 100, emoji: "🍫" },
+  { section: "Chocolatísimos", name: "Kinder",         price: 95,  emoji: "🍫" },
+  { section: "Chocolatísimos", name: "Gansito",        price: 95,  emoji: "🍫" },
+  { section: "Chocolatísimos", name: "Sniker/Milky Way", price: 95, emoji: "🍫" },
+
+  // ── FRAPPES ──────────────────────────────────────
+  { section: "Frappes", name: "Frappe Moka",     price: 75, emoji: "☕" },
+  { section: "Frappes", name: "Frappe Fresa",    price: 75, emoji: "🍓" },
+  { section: "Frappes", name: "Frappe Mazapán",  price: 75, emoji: "☕" },
+  { section: "Frappes", name: "Frappe Mango",    price: 75, emoji: "🥭" },
+  { section: "Frappes", name: "Frappe Chocoreta", price: 95, emoji: "🍫" },
+  { section: "Frappes", name: "Frappe Kinder",   price: 95, emoji: "🍫" },
+  { section: "Frappes", name: "Frappe Nutella",  price: 95, emoji: "🍫" },
+  { section: "Frappes", name: "Frappe Ferrero",  price: 95, emoji: "🍫" },
+  { section: "Frappes", name: "Frappe Magnum",   price: 95, emoji: "🍫" },
+
+  // ── ELOTES ───────────────────────────────────────
+  { section: "Elotes", name: "Elote Chico",      price: 40,  emoji: "🌽" },
+  { section: "Elotes", name: "Elote Mediano",    price: 70,  emoji: "🌽" },
+  { section: "Elotes", name: "Elote Grande",     price: 80,  emoji: "🌽" },
+  { section: "Elotes", name: "Elote Entero",     price: 90,  emoji: "🌽" },
+  { section: "Elotes", name: "Elote Empanizado", price: 100, emoji: "🌽" },
+
+  // ── CHORREADOŚ ───────────────────────────────────
+  { section: "Chorreadós", name: "Chorreadó Chico",   price: 90,  emoji: "🌽" },
+  { section: "Chorreadós", name: "Chorreadó Mediano", price: 105, emoji: "🌽" },
+  { section: "Chorreadós", name: "Chorreadó Grande",  price: 130, emoji: "🌽" },
+  { section: "Chorreadós", name: "Chorreadó Entero",  price: 140, emoji: "🌽" },
+
+  // ── DUROS PREPARADOS ─────────────────────────────
+  { section: "Duros Preparados", name: "Entero Preparado",      price: 68, emoji: "🍿" },
+  { section: "Duros Preparados", name: "Entero para Llevar",    price: 75, emoji: "🍿" },
+  { section: "Duros Preparados", name: "Chico Preparado",       price: 55, emoji: "🍿" },
+  { section: "Duros Preparados", name: "Chico para Llevar",     price: 60, emoji: "🍿" },
+  { section: "Duros Preparados", name: "Bolsita Preparada",     price: 55, emoji: "🍿" },
+  { section: "Duros Preparados", name: "Bolsita para Llevar",   price: 65, emoji: "🍿" },
+  { section: "Duros Preparados", name: "Pedacería en Plato",    price: 65, emoji: "🍿" },
+  { section: "Duros Preparados", name: "Cueritos Preparados",   price: 50, emoji: "🍿" },
+
+  // ── TOSTITOS ─────────────────────────────────────
+  { section: "Tostitos", name: "Tostiqueso",          price: 80,  emoji: "🧀" },
+  { section: "Tostitos", name: "Tostiqueso Cueritos", price: 90,  emoji: "🧀" },
+  { section: "Tostitos", name: "Tostipepino",         price: 90,  emoji: "🥒" },
+  { section: "Tostitos", name: "Tostiverdura",        price: 70,  emoji: "🥗" },
+  { section: "Tostitos", name: "Tostiverdura c/Elote",price: 100, emoji: "🥗" },
+
+  // ── NACHOS & OTROS ───────────────────────────────
+  { section: "Nachos & Otros", name: "Nachos",       price: 90,  emoji: "🧀" },
+  { section: "Nachos & Otros", name: "Maruchan",     price: 115, emoji: "🍜" },
+  { section: "Nachos & Otros", name: "Vaso Chetos",  price: 75,  emoji: "🧡" },
+
+  // ── EXTRAS ───────────────────────────────────────
+  { section: "Extras", name: "Elote y Queso Amarillo", price: 35, emoji: "🌽" },
+  { section: "Extras", name: "Aguacate",               price: 15, emoji: "🥑" },
+  { section: "Extras", name: "Cueritos",               price: 10, emoji: "🌶️" },
+  { section: "Extras", name: "Pepino",                 price: 20, emoji: "🥒" },
 ];
 /* ── FIN DE LA SECCIÓN DE CONFIGURACIÓN ─────────── */
 
@@ -110,152 +184,280 @@ try {
 
 
 /* =====================================================
-   CAPA DE DATOS — ABSTRACCIÓN FIRESTORE / localStorage
-   Todas las funciones del POS llaman a esta capa.
-   Si Firebase está disponible → usa Firestore.
-   Si no → cae a localStorage como respaldo seguro.
+   CAPA DE DATOS — ESTRATEGIA OFFLINE FIRST
+   
+   Funcionamiento:
+   1. Todo se guarda en localStorage PRIMERO (instantáneo)
+   2. Si hay internet → también se sube a Firestore
+   3. Si no hay internet → queda en cola (pendientes)
+   4. Al volver internet → sincroniza pendientes automáticamente
+   
+   Así funciona 100% offline sin importar el estado de Firebase.
 ===================================================== */
 
-/* ── COLECCIONES en Firestore ──────────────────────
-   /ventas/{id}  → documentos de ventas
-   /gastos/{id}  → documentos de gastos             */
-const COL_VENTAS = 'ventas';
-const COL_GASTOS = 'gastos';
+const COL_VENTAS    = 'ventas';
+const COL_GASTOS    = 'gastos';
+const COL_PRODUCTOS = 'productos';
 
-/* Estado reactivo en memoria (se carga desde Firestore
-   y se mantiene sincronizado con onSnapshot) */
+/* ── Productos en memoria (se mezclan con PRODUCTS hardcoded al arrancar) ── */
+let _productosDB = []; // productos guardados en Firestore/localStorage
+
+/* Estado en memoria — se carga desde localStorage al iniciar */
 let _ventas = [];
 let _gastos = [];
 
-/* ── Guardar venta en Firestore ────────────────── */
+/* ── Cargar datos iniciales desde localStorage ────── */
+function cargarDatosLocales() {
+  _ventas = JSON.parse(localStorage.getItem('estelita_ventas') || '[]');
+  _gastos = JSON.parse(localStorage.getItem('estelita_gastos') || '[]');
+}
+
+/* ── Guardar venta: localStorage primero, Firebase después ── */
 async function saveVenta(ventaObj) {
-  if (firebaseOk) {
+  if (firebaseOk && navigator.onLine) {
+    // Firebase conectado: subir directo
     try {
       await addDoc(collection(db, COL_VENTAS), ventaObj);
     } catch (e) {
-      console.error('[Firestore] Error guardando venta:', e);
-      // Respaldo local si falla la escritura remota
-      _saveLocalBackup('estelita_ventas_backup', ventaObj);
-      throw e; // Relanza para que el llamador muestre el error
+      // Falló Firebase → caer a localStorage como respaldo
+      console.warn('[Offline] Firebase falló, guardando local.');
+      _ventas.push({ ...ventaObj, _sync: false });
+      localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
+      refreshDashboard();
+      renderChart();
     }
   } else {
-    // Modo sin Firebase: usa localStorage directamente
-    const arr = JSON.parse(localStorage.getItem('estelita_ventas') || '[]');
-    arr.push(ventaObj);
-    localStorage.setItem('estelita_ventas', JSON.stringify(arr));
-    _ventas = arr;
+    // Sin internet: guardar solo en localStorage
+    _ventas.push({ ...ventaObj, _sync: false });
+    localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
     refreshDashboard();
     renderChart();
   }
 }
 
-/* ── Guardar gasto en Firestore ─────────────────── */
+/* ── Guardar gasto: localStorage primero, Firebase después ── */
 async function saveGasto(gastoObj) {
-  if (firebaseOk) {
+  if (firebaseOk && navigator.onLine) {
+    // Firebase conectado: subir directo
     try {
       await addDoc(collection(db, COL_GASTOS), gastoObj);
     } catch (e) {
-      console.error('[Firestore] Error guardando gasto:', e);
-      _saveLocalBackup('estelita_gastos_backup', gastoObj);
-      throw e;
+      console.warn('[Offline] Firebase falló, guardando local.');
+      _gastos.push({ ...gastoObj, _sync: false });
+      localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
+      refreshDashboard();
+      renderChart();
     }
   } else {
-    const arr = JSON.parse(localStorage.getItem('estelita_gastos') || '[]');
-    arr.push(gastoObj);
-    localStorage.setItem('estelita_gastos', JSON.stringify(arr));
-    _gastos = arr;
+    // Sin internet: guardar solo en localStorage
+    _gastos.push({ ...gastoObj, _sync: false });
+    localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
     refreshDashboard();
     renderChart();
   }
 }
 
-/* ── Eliminar documento de Firestore ────────────── */
+/* ── Eliminar movimiento ────────────────────────── */
 async function deleteMovFirestore(coleccion, docId) {
-  if (firebaseOk) {
+  // Eliminar de memoria y localStorage
+  if (coleccion === COL_VENTAS) {
+    _ventas = _ventas.filter(v => v.id !== docId && v._docId !== docId);
+    localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
+  } else {
+    _gastos = _gastos.filter(g => g.id !== docId && g._docId !== docId);
+    localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
+  }
+  refreshDashboard();
+  renderChart();
+
+  // Eliminar de Firebase si hay internet
+  if (firebaseOk && navigator.onLine) {
     try {
       await deleteDoc(doc(db, coleccion, docId));
     } catch (e) {
-      console.error('[Firestore] Error eliminando documento:', e);
-      showToast('❌ Error al eliminar. Revisa conexión.', 'error');
+      console.warn('[Offline] No se pudo eliminar de Firebase aún.');
     }
-  } else {
-    // Modo sin Firebase: elimina de localStorage por id
-    if (coleccion === COL_VENTAS) {
-      _ventas = _ventas.filter(v => v.id !== docId);
-      localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
-    } else {
-      _gastos = _gastos.filter(g => g.id !== docId);
-      localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
-    }
-    refreshDashboard();
-    renderChart();
   }
 }
 
-/* ── Limpiar toda la colección (Limpiar Todo) ───── */
+/* ── Limpiar todo ───────────────────────────────── */
 async function deleteAllDocs(coleccion) {
-  if (!firebaseOk) {
-    if (coleccion === COL_VENTAS) {
-      _ventas = [];
-      localStorage.removeItem('estelita_ventas');
-    } else {
-      _gastos = [];
-      localStorage.removeItem('estelita_gastos');
-    }
-    return;
+  if (coleccion === COL_VENTAS) {
+    _ventas = [];
+    localStorage.removeItem('estelita_ventas');
+  } else {
+    _gastos = [];
+    localStorage.removeItem('estelita_gastos');
   }
-  // Firestore no tiene "deleteCollection" directo:
-  // obtenemos todos los docs y los borramos en batch.
-  const snap = await getDocs(collection(db, coleccion));
-  const batch = writeBatch(db);
-  snap.forEach(d => batch.delete(d.ref));
-  await batch.commit();
+
+  if (firebaseOk && navigator.onLine) {
+    try {
+      const snap = await getDocs(collection(db, coleccion));
+      const batch = writeBatch(db);
+      snap.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    } catch (e) {
+      console.warn('[Offline] No se pudo limpiar Firebase aún.');
+    }
+  }
 }
 
-/* ── Respaldo local de emergencia ───────────────── */
-function _saveLocalBackup(key, obj) {
-  const arr = JSON.parse(localStorage.getItem(key) || '[]');
-  arr.push(obj);
-  localStorage.setItem(key, JSON.stringify(arr));
+/* ── Guardar producto en Firestore/localStorage ─── */
+async function saveProductoDB(prodObj) {
+  _productosDB.push(prodObj);
+  localStorage.setItem('estelita_productos', JSON.stringify(_productosDB));
+  if (firebaseOk && navigator.onLine) {
+    try {
+      const ref = await addDoc(collection(db, COL_PRODUCTOS), prodObj);
+      prodObj._docId = ref.id;
+      localStorage.setItem('estelita_productos', JSON.stringify(_productosDB));
+    } catch(e) { console.warn('[Offline] Producto guardado solo local.'); }
+  }
 }
 
-/* ── Getters en memoria (para gráficas, exports) ── */
+/* ── Eliminar producto ─────────────────────────── */
+async function deleteProductoDB(localId) {
+  const prod = _productosDB.find(p => p._localId === localId);
+  _productosDB = _productosDB.filter(p => p._localId !== localId);
+  localStorage.setItem('estelita_productos', JSON.stringify(_productosDB));
+  if (prod && prod._docId && firebaseOk && navigator.onLine) {
+    try { await deleteDoc(doc(db, COL_PRODUCTOS, prod._docId)); } catch(e) {}
+  }
+}
+
+/* ── Cargar productos desde Firestore ─────────── */
+async function cargarProductosDesdeFirestore() {
+  if (!firebaseOk || !navigator.onLine) return;
+  try {
+    const snap = await getDocs(collection(db, COL_PRODUCTOS));
+    const deFS = snap.docs.map(d => ({ ...d.data(), _docId: d.id }));
+    const soloLocales = _productosDB.filter(p => !p._docId);
+    _productosDB = [...deFS, ...soloLocales];
+    localStorage.setItem('estelita_productos', JSON.stringify(_productosDB));
+  } catch(e) { console.warn('[Firestore] Error cargando productos:', e.message); }
+}
+
+/* ── Cargar productos locales al arrancar ───────── */
+function cargarProductosLocales() {
+  _productosDB = JSON.parse(localStorage.getItem('estelita_productos') || '[]');
+}
+
+/* ── Obtener catálogo combinado (hardcoded + DB) ── */
+function getCatalogoCombinado() {
+  // Convierte PRODUCTS a formato compatible
+  const hardcoded = PRODUCTS.map((p, i) => ({
+    _localId: 'hc_' + i,
+    name: p.name, price: p.price, emoji: p.emoji,
+    section: p.section || 'General', img: p.img || null,
+    _hardcoded: true
+  }));
+  return [...hardcoded, ..._productosDB];
+}
+
+window.cargarProductosDesdeFirestore = cargarProductosDesdeFirestore;
+
+
 function getVentas() { return _ventas; }
 function getGastos() { return _gastos; }
 
+/* ── Sincronizar pendientes cuando vuelve internet ─
+   Al reconectarse sube todo lo que quedó sin sincronizar */
+async function sincronizarPendientes() {
+  if (!firebaseOk || !navigator.onLine) return;
 
-/* =====================================================
-   LISTENERS EN TIEMPO REAL (onSnapshot)
-   Firestore notifica al instante cada vez que un
-   documento es agregado, modificado o eliminado,
-   desde cualquier dispositivo. La UI se actualiza sola.
-===================================================== */
+  const ventasPendientes = _ventas.filter(v => !v._sync && !v._docId);
+  const gastosPendientes = _gastos.filter(g => !g._sync && !g._docId);
+
+  if (ventasPendientes.length === 0 && gastosPendientes.length === 0) return;
+
+  let subidos = 0;
+  for (const v of ventasPendientes) {
+    try {
+      await addDoc(collection(db, COL_VENTAS), v);
+      v._sync = true;
+      subidos++;
+    } catch (e) { /* reintentará después */ }
+  }
+  for (const g of gastosPendientes) {
+    try {
+      await addDoc(collection(db, COL_GASTOS), g);
+      g._sync = true;
+      subidos++;
+    } catch (e) { /* reintentará después */ }
+  }
+
+  if (subidos > 0) {
+    localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
+    localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
+    showToast(`☁️ ${subidos} registro(s) sincronizados con la nube`, 'success');
+  }
+}
+
+/* ── Carga datos desde Firestore una sola vez (getDocs) ─
+   REEMPLAZA onSnapshot para ahorrar lecturas del plan gratuito.
+   Con 200-300 ventas/día, onSnapshot dispara cientos de lecturas
+   extra. getDocs hace UNA lectura por llamada, punto.            */
+async function cargarDesdeFirestore() {
+  if (!firebaseOk || !navigator.onLine) return;
+
+  try {
+    const [snapV, snapG] = await Promise.all([
+      getDocs(query(collection(db, COL_VENTAS), orderBy('timestamp', 'asc'))),
+      getDocs(query(collection(db, COL_GASTOS), orderBy('timestamp', 'asc')))
+    ]);
+
+    const deFirestoreV = snapV.docs.map(d => ({ ...d.data(), _docId: d.id, _sync: true }));
+    const deFirestoreG = snapG.docs.map(d => ({ ...d.data(), _docId: d.id, _sync: true }));
+
+    // Conservar solo los locales que aún no se subieron
+    const soloLocalesV = _ventas.filter(v => !v._sync && !v._docId);
+    const soloLocalesG = _gastos.filter(g => !g._sync && !g._docId);
+
+    _ventas = [...deFirestoreV, ...soloLocalesV];
+    _gastos = [...deFirestoreG, ...soloLocalesG];
+
+    localStorage.setItem('estelita_ventas', JSON.stringify(_ventas));
+    localStorage.setItem('estelita_gastos', JSON.stringify(_gastos));
+    refreshDashboard();
+    renderChart();
+  } catch (e) {
+    console.warn('[Firestore] Error al cargar datos:', e.message);
+  }
+}
+
+/* ── Auto-refresh cada 5 minutos mientras la página está abierta ─
+   Si hay más de una caja abierta, se sincronizan entre sí
+   cada 5 min sin gastar lecturas continuamente.                   */
+let _refreshInterval = null;
+function iniciarAutoRefresh() {
+  if (_refreshInterval) clearInterval(_refreshInterval);
+  _refreshInterval = setInterval(() => {
+    if (navigator.onLine) cargarDesdeFirestore();
+  }, 5 * 60 * 1000); // cada 5 minutos
+}
+
+/* ── Reemplaza suscribirFirestore ─────────────────── */
 function suscribirFirestore() {
   if (!firebaseOk) return;
 
-  /* Escuchar colección /ventas, ordenada por timestamp */
-  onSnapshot(
-    query(collection(db, COL_VENTAS), orderBy('timestamp', 'asc')),
-    snap => {
-      _ventas = snap.docs.map(d => ({ ...d.data(), _docId: d.id }));
-      refreshDashboard();
-      renderChart();
-    },
-    err => console.error('[Firestore] Error en listener ventas:', err)
-  );
+  // Carga inicial desde Firestore
+  cargarDesdeFirestore();
+  cargarProductosDesdeFirestore().then(() => { renderCatalog(); renderAdminProductos(); });
 
-  /* Escuchar colección /gastos */
-  onSnapshot(
-    query(collection(db, COL_GASTOS), orderBy('timestamp', 'asc')),
-    snap => {
-      _gastos = snap.docs.map(d => ({ ...d.data(), _docId: d.id }));
-      refreshDashboard();
-      renderChart();
-    },
-    err => console.error('[Firestore] Error en listener gastos:', err)
-  );
+  // Auto-refresh periódico (ahorra lecturas vs onSnapshot)
+  iniciarAutoRefresh();
+
+  // Sincronizar pendientes cuando vuelve el internet
+  window.addEventListener('online', () => {
+    setTimeout(() => {
+      sincronizarPendientes();
+      cargarDesdeFirestore();
+    }, 2000);
+  });
 }
 
+// Exponemos para poder hacer refresh manual desde la UI
+window.cargarDesdeFirestore = cargarDesdeFirestore;
 
 /* =====================================================
    INDICADOR DE ESTADO DE CONEXIÓN
@@ -298,23 +500,84 @@ function showTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('sec-' + tab).classList.add('active');
   event.currentTarget.classList.add('active');
-  if (tab === 'acc') { refreshDashboard(); setTimeout(renderChart, 80); }
+  if (tab === 'acc')   { refreshDashboard(); setTimeout(renderChart, 80); }
+  if (tab === 'admin') { actualizarSelectSecciones(); renderAdminProductos(); }
 }
 window.showTab = showTab; // Exponemos al HTML (onclick)
 
 
 /* =====================================================
-   CATÁLOGO DE PRODUCTOS
+   CATÁLOGO DE PRODUCTOS — con filtro de secciones
 ===================================================== */
-function renderCatalog() {
-  const grid = document.getElementById('catalog-grid');
-  grid.innerHTML = PRODUCTS.map((p, i) => `
-    <button class="product-btn" onclick="addToTicket(${i})">
-      <span class="emoji">${p.emoji}</span>
-      <span class="p-name">${p.name}</span>
-      <span class="p-price">$${p.price}</span>
+let _seccionActiva = 'Todas';
+
+function renderSecTabs() {
+  const todos     = getCatalogoCombinado();
+  const secciones = ['Todas', ...new Set(todos.map(p => p.section || 'General'))];
+  const container = document.getElementById('sec-tabs');
+  if (!container) return;
+
+  container.innerHTML = secciones.map(s => `
+    <button class="sec-tab-btn${s === _seccionActiva ? ' active' : ''}"
+      onclick="setSeccionActiva('${s.replace(/'/g,"\\'")}')">
+      ${s}
     </button>
   `).join('');
+}
+
+function setSeccionActiva(sec) {
+  _seccionActiva = sec;
+  renderSecTabs();
+  renderCatalogGrid();
+}
+window.setSeccionActiva = setSeccionActiva;
+
+function renderCatalog() {
+  renderSecTabs();
+  renderCatalogGrid();
+}
+
+function renderCatalogGrid() {
+  const grid  = document.getElementById('catalog-grid');
+  const todos = getCatalogoCombinado();
+  const filtrados = _seccionActiva === 'Todas'
+    ? todos
+    : todos.filter(p => (p.section || 'General') === _seccionActiva);
+
+  // Agrupar por sección (solo si es "Todas")
+  if (_seccionActiva === 'Todas') {
+    const grupos = {};
+    filtrados.forEach(p => {
+      const s = p.section || 'General';
+      if (!grupos[s]) grupos[s] = [];
+      grupos[s].push(p);
+    });
+
+    let html = '';
+    Object.entries(grupos).forEach(([sec, prods]) => {
+      html += `<div class="catalog-section-title"><span>${sec}</span></div>`;
+      html += prods.map(p => prodBtn(p)).join('');
+    });
+    grid.innerHTML = html;
+  } else {
+    grid.innerHTML = filtrados.map(p => prodBtn(p)).join('');
+  }
+}
+
+function prodBtn(p) {
+  const media = p.img
+    ? `<img src="${p.img}" class="prod-img" alt="${p.name}" />`
+    : `<span class="emoji">${p.emoji || '🍦'}</span>`;
+  return `
+    <button class="product-btn"
+      onclick="addToTicketByLocalId('${p._localId}')"
+      ontouchstart="this.classList.add('touch-active')"
+      ontouchend="this.classList.remove('touch-active')"
+      ontouchcancel="this.classList.remove('touch-active')">
+      ${media}
+      <span class="p-name">${p.name}</span>
+      <span class="p-price">$${p.price}</span>
+    </button>`;
 }
 
 
@@ -322,6 +585,18 @@ function renderCatalog() {
    TICKET: Agregar, ajustar cantidad, limpiar
 ===================================================== */
 let ticket = {}; // { productName: { name, price, qty } }
+
+function addToTicketByLocalId(localId) {
+  const p = getCatalogoCombinado().find(x => x._localId === localId);
+  if (!p) return;
+  if (ticket[p.name]) {
+    ticket[p.name].qty++;
+  } else {
+    ticket[p.name] = { name: p.name, price: p.price, qty: 1 };
+  }
+  renderTicket();
+}
+window.addToTicketByLocalId = addToTicketByLocalId;
 
 function addToTicket(productIndex) {
   const p = PRODUCTS[productIndex];
@@ -397,34 +672,29 @@ async function cobrar() {
     return;
   }
 
-  // Deshabilita el botón mientras guarda (evita doble cobro)
-  const btnCobrar = document.querySelector('.btn-cobrar');
-  btnCobrar.disabled = true;
-  btnCobrar.textContent = '⏳ Guardando...';
-
   const total = keys.reduce((acc, n) => acc + ticket[n].price * ticket[n].qty, 0);
   const items = keys.map(n => `${ticket[n].qty}x ${n}`).join(', ');
 
   const ventaObj = {
-    id:        Date.now() + '_v',  // ID local de respaldo
+    id:        Date.now() + '_v',
     type:      'venta',
     desc:      'Venta: ' + items,
     amount:    total,
     date:      new Date().toLocaleString('es-MX'),
-    timestamp: Date.now()          // Campo para ordenar en Firestore
+    timestamp: Date.now()
   };
 
   try {
     await saveVenta(ventaObj);
-    showToast(`✅ Venta de $${total} registrada`, 'success');
+    // ✅ Limpiamos el ticket DESPUÉS de que se guardó correctamente
     clearTicket();
-    // Dashboard y gráfica se actualizan solos via onSnapshot
+    if (navigator.onLine) {
+      showToast(`✅ Venta de $${total} registrada`, 'success');
+    } else {
+      showToast(`✅ $${total} guardado sin internet — se sincronizará solo 📶`, 'info');
+    }
   } catch (e) {
-    showToast('⚠️ Guardado local (sin internet). Se sincronizará pronto.', 'info');
-    clearTicket();
-  } finally {
-    btnCobrar.disabled = false;
-    btnCobrar.innerHTML = `💳 Cobrar <span id="btn-cobrar-total">$0</span>`;
+    showToast('⚠️ Error al guardar, intenta de nuevo', 'error');
   }
 }
 window.cobrar = cobrar;
@@ -465,12 +735,52 @@ window.registrarGasto = registrarGasto;
 
 
 /* =====================================================
+   FILTRO DE FECHA
+   'hoy' | 'semana' | 'mes' | 'todo'
+===================================================== */
+let _filtroFecha = 'hoy';
+
+function setFiltro(filtro) {
+  _filtroFecha = filtro;
+  document.querySelectorAll('.filtro-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.filtro-btn[data-filtro="${filtro}"]`)?.classList.add('active');
+  refreshDashboard();
+  renderChart();
+}
+window.setFiltro = setFiltro;
+
+function filtrarPorFecha(arr) {
+  if (_filtroFecha === 'todo') return arr;
+
+  const ahora = new Date();
+  const hoy   = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+
+  if (_filtroFecha === 'hoy') {
+    return arr.filter(r => {
+      const t = new Date(r.timestamp);
+      return t >= hoy;
+    });
+  }
+  if (_filtroFecha === 'semana') {
+    const inicioSemana = new Date(hoy);
+    inicioSemana.setDate(hoy.getDate() - hoy.getDay()); // domingo
+    return arr.filter(r => new Date(r.timestamp) >= inicioSemana);
+  }
+  if (_filtroFecha === 'mes') {
+    const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+    return arr.filter(r => new Date(r.timestamp) >= inicioMes);
+  }
+  return arr;
+}
+
+
+/* =====================================================
    DASHBOARD — Actualizar tarjetas e historial
    Ahora lee de _ventas / _gastos (en memoria, reactivo)
 ===================================================== */
 function refreshDashboard() {
-  const ventas = getVentas();
-  const gastos = getGastos();
+  const ventas = filtrarPorFecha(getVentas());
+  const gastos = filtrarPorFecha(getGastos());
 
   const totalV   = ventas.reduce((a, v) => a + v.amount, 0);
   const totalG   = gastos.reduce((a, g) => a + g.amount, 0);
@@ -493,14 +803,14 @@ function refreshDashboard() {
   document.getElementById('mov-count').textContent = all.length + ' registros';
 
   if (all.length === 0) {
-    listEl.innerHTML = '<div class="mov-empty">Sin movimientos aún</div>';
+    listEl.innerHTML = '<div class="mov-empty">Sin movimientos en este período</div>';
     return;
   }
 
-  // Guardamos el array para que deleteMovimiento lo use
-  listEl.dataset.all = JSON.stringify(all.slice(0, 50));
+  // Sin límite de 50 — mostramos todos los del período seleccionado
+  listEl.dataset.all = JSON.stringify(all);
 
-  listEl.innerHTML = all.slice(0, 50).map((m, i) => `
+  listEl.innerHTML = all.map((m, i) => `
     <div class="mov-item" id="movrow-${i}">
       <div class="mov-dot ${m.type}"></div>
       <div class="mov-desc">
@@ -544,7 +854,6 @@ async function deleteMovimiento(index) {
 
   const label = m.type === 'venta' ? 'Venta eliminada' : 'Gasto eliminado';
   showToast(`🗑 ${label} del historial`, 'info');
-  // onSnapshot actualizará la UI automáticamente
 }
 window.deleteMovimiento = deleteMovimiento;
 
@@ -572,7 +881,8 @@ async function confirmarLimpiar() {
   ticket = {};
   cerrarLimpiarModal();
   renderTicket();
-  // onSnapshot se encargará del refresh del dashboard
+  refreshDashboard();
+  renderChart();
   showToast('🗑 Todos los datos han sido borrados', 'info');
 }
 window.confirmarLimpiar = confirmarLimpiar;
@@ -722,8 +1032,8 @@ function switchChart(type, btn) {
 window.switchChart = switchChart;
 
 function renderChart() {
-  const ventas = getVentas();
-  const gastos = getGastos();
+  const ventas = filtrarPorFecha(getVentas());
+  const gastos = filtrarPorFecha(getGastos());
 
   const dias = {};
   [...ventas, ...gastos].forEach(m => {
@@ -799,8 +1109,167 @@ window.renderChart = renderChart;
 
 
 /* =====================================================
-   TOAST
+   ADMIN — GESTIÓN DE PRODUCTOS
+   Permite agregar/eliminar productos desde la UI
+   con secciones, emoji o foto, nombre y precio.
 ===================================================== */
+
+// Secciones disponibles (editables desde UI)
+const SECCIONES_DEFAULT = [
+  'Fresas con Crema','Nieve de Raspa','Nieve de Crema',
+  'Especialidades','Chocolatísimos','Frappes',
+  'Elotes','Chorreadós','Duros Preparados',
+  'Tostitos','Nachos & Otros','Extras'
+];
+
+function renderAdminProductos() {
+  const sec    = document.getElementById('admin-sec-filter')?.value || 'Todas';
+  const todos  = getCatalogoCombinado();
+  const filtrados = sec === 'Todas' ? todos : todos.filter(p => (p.section || 'General') === sec);
+
+  // Actualizar select de secciones en el filtro
+  const secFilter = document.getElementById('admin-sec-filter');
+  if (secFilter) {
+    const opts = getAllSecciones();
+    secFilter.innerHTML = '<option value="Todas">Todas las secciones</option>' +
+      opts.map(s => `<option value="${s}"${s === sec ? ' selected':'' }>${s}</option>`).join('');
+  }
+
+  const list = document.getElementById('admin-prod-list');
+  if (!list) return;
+
+  if (filtrados.length === 0) {
+    list.innerHTML = '<div class="mov-empty">No hay productos en esta sección</div>';
+    return;
+  }
+
+  // Agrupar por sección
+  const grupos = {};
+  filtrados.forEach(p => {
+    const s = p.section || 'General';
+    if (!grupos[s]) grupos[s] = [];
+    grupos[s].push(p);
+  });
+
+  list.innerHTML = Object.entries(grupos).map(([sec, prods]) => `
+    <div class="admin-sec-group">
+      <div class="admin-sec-label">${sec}</div>
+      ${prods.map(p => `
+        <div class="admin-prod-row">
+          <div class="admin-prod-thumb">
+            ${p.img ? `<img src="${p.img}" alt="" />` : `<span>${p.emoji || '🍦'}</span>`}
+          </div>
+          <div class="admin-prod-info">
+            <span class="admin-prod-name">${p.name}</span>
+            <span class="admin-prod-price">$${p.price}</span>
+          </div>
+          ${p._hardcoded ? `<span class="admin-prod-badge">Base</span>` :
+            `<button class="admin-del-btn" onclick="eliminarProductoAdmin('${p._localId}')">🗑</button>`}
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+window.renderAdminProductos = renderAdminProductos;
+
+function getAllSecciones() {
+  const deSecs = [...new Set(getCatalogoCombinado().map(p => p.section || 'General'))];
+  return [...new Set([...SECCIONES_DEFAULT, ...deSecs])].filter(Boolean);
+}
+
+function actualizarSelectSecciones() {
+  const opts = getAllSecciones();
+  const sel  = document.getElementById('nuevo-seccion');
+  if (!sel) return;
+  const val  = sel.value;
+  sel.innerHTML = opts.map(s => `<option value="${s}"${s===val?' selected':''}>${s}</option>`).join('') +
+    '<option value="__nueva__">➕ Nueva sección...</option>';
+}
+window.actualizarSelectSecciones = actualizarSelectSecciones;
+
+function onSeccionChange() {
+  const sel = document.getElementById('nuevo-seccion');
+  if (sel.value === '__nueva__') {
+    const nueva = prompt('Nombre de la nueva sección:');
+    if (nueva && nueva.trim()) {
+      // Agrega a lista local y vuelve a renderizar
+      const opt = document.createElement('option');
+      opt.value = nueva.trim(); opt.textContent = nueva.trim(); opt.selected = true;
+      sel.insertBefore(opt, sel.lastElementChild);
+      sel.value = nueva.trim();
+    } else {
+      sel.value = SECCIONES_DEFAULT[0];
+    }
+  }
+}
+window.onSeccionChange = onSeccionChange;
+
+// Preview de imagen antes de subir
+function onImgPreview() {
+  const file = document.getElementById('nuevo-img').files[0];
+  const prev = document.getElementById('img-preview');
+  if (!file) { prev.style.display = 'none'; return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    prev.src = e.target.result;
+    prev.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+window.onImgPreview = onImgPreview;
+
+async function agregarProductoAdmin() {
+  const name    = document.getElementById('nuevo-nombre').value.trim();
+  const price   = parseFloat(document.getElementById('nuevo-precio').value);
+  const emoji   = document.getElementById('nuevo-emoji').value.trim() || '🍦';
+  const section = document.getElementById('nuevo-seccion').value === '__nueva__'
+    ? SECCIONES_DEFAULT[0] : document.getElementById('nuevo-seccion').value;
+  const imgFile = document.getElementById('nuevo-img').files[0];
+
+  if (!name)           { showToast('Escribe el nombre del producto', 'error'); return; }
+  if (!price || price <= 0) { showToast('Ingresa un precio válido', 'error'); return; }
+
+  let imgBase64 = null;
+  if (imgFile) {
+    imgBase64 = await new Promise(res => {
+      const r = new FileReader();
+      r.onload = e => res(e.target.result);
+      r.readAsDataURL(imgFile);
+    });
+  }
+
+  const prod = {
+    _localId: 'db_' + Date.now(),
+    name, price, emoji, section,
+    img: imgBase64 || null,
+    timestamp: Date.now()
+  };
+
+  await saveProductoDB(prod);
+
+  // Limpiar formulario
+  document.getElementById('nuevo-nombre').value = '';
+  document.getElementById('nuevo-precio').value = '';
+  document.getElementById('nuevo-emoji').value  = '';
+  document.getElementById('nuevo-img').value    = '';
+  document.getElementById('img-preview').style.display = 'none';
+
+  renderCatalog();
+  renderAdminProductos();
+  showToast(`✅ Producto "${name}" agregado`, 'success');
+}
+window.agregarProductoAdmin = agregarProductoAdmin;
+
+async function eliminarProductoAdmin(localId) {
+  if (!confirm('¿Eliminar este producto del catálogo?')) return;
+  await deleteProductoDB(localId);
+  renderCatalog();
+  renderAdminProductos();
+  showToast('🗑 Producto eliminado', 'info');
+}
+window.eliminarProductoAdmin = eliminarProductoAdmin;
+
+
 function showToast(msg, type = 'info') {
   const container = document.getElementById('toast-container');
   const t = document.createElement('div');
@@ -816,10 +1285,17 @@ window.showToast = showToast;
    INICIALIZAR APP
    Todo arranca aquí al cargar la página.
 ===================================================== */
-renderCatalog();
-refreshDashboard();
-suscribirFirestore();    // Activa listeners en tiempo real
-initConexionIndicator(); // Badge de estado online/offline
+cargarDatosLocales();    // 1. Carga datos locales PRIMERO (funciona sin internet)
+cargarProductosLocales();// 2. Carga productos locales
+renderCatalog();         // 3. Renderiza el catálogo de productos
+refreshDashboard();      // 4. Muestra los datos locales en el dashboard
+suscribirFirestore();    // 5. Conecta con Firebase si hay internet
+initConexionIndicator(); // 6. Badge de estado online/offline
+// Admin: llenar secciones al arrancar (espera al DOM)
+document.addEventListener('DOMContentLoaded', () => {
+  actualizarSelectSecciones();
+  renderAdminProductos();
+});
 
 </script>
 <style>
@@ -1172,6 +1648,57 @@ initConexionIndicator(); // Badge de estado online/offline
   .pwd-hint { font-size: 0.75rem; color: var(--muted); text-align: center; margin-top: 12px; }
 
   /* =============================================
+     FILTRO DE FECHA
+  ============================================= */
+  .filtro-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 12px; margin-bottom: 22px;
+  }
+  .filtro-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .filtro-btn {
+    padding: 8px 16px; border-radius: 50px;
+    border: 1px solid var(--border);
+    background: var(--glass); color: var(--muted);
+    cursor: pointer; font-family: 'DM Sans', sans-serif;
+    font-size: 0.82rem; font-weight: 500; transition: all 0.2s;
+    /* Touch: área mínima de 44px para dedos */
+    min-height: 38px;
+  }
+  .filtro-btn.active {
+    background: linear-gradient(135deg, var(--blue), var(--purple));
+    color: #fff; border-color: transparent;
+    box-shadow: 0 0 16px rgba(63,164,255,0.3);
+  }
+  .filtro-btn:hover:not(.active) { color: var(--text); border-color: var(--blue); }
+
+  /* =============================================
+     MEJORAS TÁCTILES (pantallas touch)
+  ============================================= */
+  /* Área mínima 48px para todos los botones del catálogo */
+  .product-btn { min-height: 90px; }
+
+  /* Feedback táctil inmediato con touchstart */
+  .product-btn:active,
+  .product-btn.touch-active {
+    transform: scale(0.94) !important;
+    border-color: var(--pink) !important;
+    box-shadow: 0 0 24px rgba(255,63,164,0.4) !important;
+  }
+
+  /* Botones +/- del ticket más grandes para touch */
+  .qty-ctrl button {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 1.15rem !important;
+  }
+
+  /* Botón cobrar: más alto en touch */
+  .btn-cobrar { min-height: 60px !important; font-size: 1.1rem !important; }
+
+  /* Evitar zoom en inputs en iOS */
+  input, select { font-size: 16px !important; }
+
+  /* =============================================
      GRÁFICA
   ============================================= */
   .chart-section { margin-top: 28px; }
@@ -1186,6 +1713,112 @@ initConexionIndicator(); // Badge de estado online/offline
   }
   .chart-tab.active { background: linear-gradient(135deg,var(--blue),var(--purple)); color:#fff; border-color:transparent; }
   .chart-wrap { position: relative; height: 280px; }
+
+  /* =============================================
+     CATÁLOGO — HEADER + TABS DE SECCIÓN
+  ============================================= */
+  .catalog-header {
+    margin-bottom: 14px;
+  }
+
+  .sec-tabs {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin-top: 10px;
+  }
+
+  .sec-tab-btn {
+    padding: 7px 14px; border-radius: 50px;
+    border: 1px solid var(--border);
+    background: var(--glass); color: var(--muted);
+    cursor: pointer; font-family: 'DM Sans', sans-serif;
+    font-size: 0.78rem; font-weight: 500;
+    transition: all 0.2s; white-space: nowrap;
+    min-height: 34px;
+  }
+  .sec-tab-btn:hover:not(.active) { color: var(--text); border-color: var(--pink); }
+  .sec-tab-btn.active {
+    background: linear-gradient(135deg, var(--pink), var(--purple));
+    color: #fff; border-color: transparent;
+    box-shadow: 0 0 14px rgba(255,63,164,0.3);
+  }
+
+  /* =============================================
+     CATÁLOGO — TÍTULOS DE SECCIÓN (vista Todas)
+  ============================================= */
+  .catalog-section-title {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: 10px;
+    margin: 10px 0 4px;
+    font-family: 'Syne', sans-serif; font-size: 0.75rem; font-weight: 700;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 2px;
+  }
+  .catalog-section-title::after {
+    content: ''; flex: 1; height: 1px; background: var(--border);
+  }
+
+  .prod-img {
+    width: 52px; height: 52px; object-fit: cover;
+    border-radius: 10px; position: relative; z-index: 1;
+  }
+
+  /* =============================================
+     ADMIN — GESTIÓN DE PRODUCTOS
+  ============================================= */
+  .admin-grid {
+    display: grid; grid-template-columns: 340px 1fr; gap: 24px;
+  }
+  @media (max-width: 900px) { .admin-grid { grid-template-columns: 1fr; } }
+
+  .admin-sec-group { margin-bottom: 18px; }
+  .admin-sec-label {
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--muted);
+    padding: 6px 0 8px; border-bottom: 1px solid var(--border); margin-bottom: 8px;
+  }
+
+  .admin-prod-row {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--glass); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 6px;
+    transition: border-color 0.2s;
+  }
+  .admin-prod-row:hover { border-color: var(--purple); }
+
+  .admin-prod-thumb {
+    width: 42px; height: 42px; border-radius: 8px;
+    background: var(--glass-b); display: flex; align-items: center; justify-content: center;
+    font-size: 1.5rem; overflow: hidden; flex-shrink: 0;
+  }
+  .admin-prod-thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+  .admin-prod-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .admin-prod-name { font-size: 0.88rem; font-weight: 500; }
+  .admin-prod-price { font-family: 'Syne', sans-serif; font-size: 0.82rem; color: var(--pink); }
+
+  .admin-del-btn {
+    background: rgba(255,60,80,0.1); border: 1px solid rgba(255,60,80,0.25);
+    color: #ff3c50; border-radius: 8px; padding: 6px 10px;
+    cursor: pointer; font-size: 0.88rem; transition: all 0.15s; flex-shrink: 0;
+  }
+  .admin-del-btn:hover { background: rgba(255,60,80,0.25); }
+
+  .admin-prod-badge {
+    font-size: 0.68rem; padding: 3px 8px; border-radius: 20px;
+    background: rgba(155,63,255,0.15); color: var(--purple);
+    border: 1px solid rgba(155,63,255,0.3); flex-shrink: 0;
+  }
+
+  .img-upload-wrap { position: relative; }
+  #img-preview {
+    display: none; width: 100%; max-height: 120px; object-fit: cover;
+    border-radius: var(--radius-sm); margin-top: 8px;
+    border: 1px solid var(--border);
+  }
+
+  .admin-filter-bar {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;
+  }
+  .admin-filter-bar select { flex: 1; min-width: 180px; }
 </style>
 </head>
 <body>
@@ -1202,6 +1835,7 @@ initConexionIndicator(); // Badge de estado online/offline
       <span id="conexion-badge" style="font-size:0.7rem;color:var(--muted);white-space:nowrap;">⏳ Conectando...</span>
       <button class="tab-btn active" onclick="showTab('pos')">🧾 Caja</button>
       <button class="tab-btn" onclick="showTab('acc')">📊 Contabilidad</button>
+      <button class="tab-btn" onclick="showTab('admin')">🛠 Productos</button>
     </nav>
   </header>
 
@@ -1216,7 +1850,12 @@ initConexionIndicator(); // Badge de estado online/offline
 
       <!-- Catálogo de Productos -->
       <div>
-        <p class="catalog-title">🧊 Catálogo de Productos</p>
+        <div class="catalog-header">
+          <p class="catalog-title">🧊 Catálogo de Productos</p>
+          <div class="sec-tabs" id="sec-tabs">
+            <!-- Generado por JS -->
+          </div>
+        </div>
         <div class="catalog-grid" id="catalog-grid">
           <!-- Generado por JS -->
         </div>
@@ -1254,6 +1893,19 @@ initConexionIndicator(); // Badge de estado online/offline
        SECCIÓN: CONTABILIDAD
   ======================================= -->
   <section id="sec-acc" class="section">
+
+    <!-- Filtro de fecha + refresh -->
+    <div class="filtro-bar">
+      <div class="filtro-tabs">
+        <button class="filtro-btn active" data-filtro="hoy"    onclick="setFiltro('hoy')">📅 Hoy</button>
+        <button class="filtro-btn"        data-filtro="semana" onclick="setFiltro('semana')">📆 Esta semana</button>
+        <button class="filtro-btn"        data-filtro="mes"    onclick="setFiltro('mes')">🗓 Este mes</button>
+        <button class="filtro-btn"        data-filtro="todo"   onclick="setFiltro('todo')">📋 Todo</button>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="cargarDesdeFirestore().then(()=>showToast('🔄 Datos actualizados','success'))" title="Sincronizar con la nube">
+        🔄 Actualizar
+      </button>
+    </div>
 
     <!-- Stats -->
     <div class="stats-grid">
@@ -1343,6 +1995,80 @@ initConexionIndicator(); // Badge de estado online/offline
 
   </section>
 
+  <!-- ======================================
+       SECCIÓN: ADMIN — GESTIÓN DE PRODUCTOS
+  ======================================= -->
+  <section id="sec-admin" class="section">
+
+    <h2>🛠 Gestión de Productos</h2>
+
+    <div class="admin-grid">
+
+      <!-- Formulario Agregar Producto -->
+      <div class="card">
+        <h3>➕ Agregar Producto</h3>
+
+        <div class="form-group">
+          <label>Nombre del producto</label>
+          <input type="text" id="nuevo-nombre" placeholder="Ej. Helado de Vainilla" />
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Precio ($)</label>
+            <input type="number" id="nuevo-precio" placeholder="0.00" min="0" step="0.50" />
+          </div>
+          <div class="form-group">
+            <label>Emoji (si no hay foto)</label>
+            <input type="text" id="nuevo-emoji" placeholder="🍦" maxlength="4" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Sección</label>
+          <select id="nuevo-seccion" onchange="onSeccionChange()">
+            <!-- Llenado por JS -->
+          </select>
+        </div>
+
+        <div class="form-group img-upload-wrap">
+          <label>Foto del producto (opcional)</label>
+          <input type="file" id="nuevo-img" accept="image/*" onchange="onImgPreview()" />
+          <img id="img-preview" alt="Vista previa" />
+        </div>
+
+        <button class="btn btn-primary" style="width:100%;margin-top:4px" onclick="agregarProductoAdmin()">
+          💾 Guardar Producto
+        </button>
+      </div>
+
+      <!-- Lista de Productos -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <h3 style="margin:0">📋 Catálogo Actual</h3>
+          <button class="btn btn-ghost btn-sm" onclick="cargarProductosDesdeFirestore().then(()=>{renderCatalog();renderAdminProductos();showToast('🔄 Productos actualizados','success')})">
+            🔄 Sincronizar
+          </button>
+        </div>
+
+        <div class="admin-filter-bar">
+          <select id="admin-sec-filter" onchange="renderAdminProductos()">
+            <option value="Todas">Todas las secciones</option>
+          </select>
+        </div>
+
+        <div id="admin-prod-list">
+          <div class="mov-empty">Cargando productos...</div>
+        </div>
+
+        <p style="font-size:0.72rem;color:var(--muted);margin-top:14px;line-height:1.5">
+          🔒 Los productos marcados como <strong style="color:var(--purple)">Base</strong> están en el código fuente. Para editarlos, modifica la variable <code>PRODUCTS</code> en el HTML.
+        </p>
+      </div>
+
+    </div>
+  </section>
+
 </div><!-- end app-shell -->
 
 <!-- TOAST -->
@@ -1417,5 +2143,3 @@ initConexionIndicator(); // Badge de estado online/offline
 
 </body>
 </html>
-
-
